@@ -1,0 +1,18 @@
+[project]
+name = "jarvis-custom"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "chainlit",
+    "loguru",
+]
+
+[tool.uv.workspace]
+members = ["modules/*"]
+
+[tool.uv.sources]
+# 告诉 uv，这两个依赖直接去本地工作区里找，而不是去 PyPI 下载
+chainlit = { workspace = true }
+loguru = { workspace = true }

@@ -1,0 +1,6 @@
+[submodule "modules/chainlit"]
+	path = modules/chainlit
+	url = https://github.com/chainlit/chainlit.git
+[submodule "modules/loguru"]
+	path = modules/loguru
+	url = https://github.com/Delgan/loguru.git

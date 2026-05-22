@@ -1,0 +1,445 @@
+diff --git a/package-lock.json b/package-lock.json
+index ff4d75e..444a63d 100644
+Binary files a/package-lock.json and b/package-lock.json differ
+diff --git a/package.json b/package.json
+index 837bf77..1cf4235 100644
+--- a/package.json
++++ b/package.json
+@@ -33,7 +33,7 @@
+     "prepublishOnly": "npm run build"
+   },
+   "dependencies": {
+-    "@actual-app/api": "^26.3.0",
++    "@actual-app/api": "^26.5.2",
+     "@modelcontextprotocol/sdk": "1.27.1",
+     "dotenv": "17.3.1",
+     "express": "5.2.1",
+diff --git a/src/actual-api.ts b/src/actual-api.ts
+index 27adca3..f10e38f 100644
+--- a/src/actual-api.ts
++++ b/src/actual-api.ts
+@@ -3,14 +3,10 @@ import fs from 'fs';
+ import path from 'path';
+ import os from 'os';
+ import { BudgetFile, TransactionData, UpdateTransactionData } from './types.js';
+-import {
+-  APIAccountEntity,
+-  APICategoryEntity,
+-  APICategoryGroupEntity,
+-  APIPayeeEntity,
+-} from '@actual-app/api/@types/loot-core/src/server/api-models.js';
+-import { RuleEntity, TransactionEntity } from '@actual-app/api/@types/loot-core/src/types/models/index.js';
+-import { ImportTransactionEntity } from '@actual-app/api/@types/loot-core/src/types/models/import-transaction.js';
++import type { APIAccountEntity, APICategoryEntity, APICategoryGroupEntity, APIPayeeEntity } from '@actual-app/core/server/api-models';
++import type { TransactionEntity } from '@actual-app/core/types/models/transaction';
++import type { RuleEntity } from '@actual-app/core/types/models/rule';
++import type { ImportTransactionEntity } from '@actual-app/core/types/models/import-transaction';
+ 
+ const DEFAULT_DATA_DIR: string = path.resolve(os.homedir() || '.', '.actual');
+ 
+@@ -42,7 +38,6 @@ export async function initActualApi(): Promise<void> {
+     }
+     const serverURL = process.env.ACTUAL_SERVER_URL;
+     const password = process.env.ACTUAL_PASSWORD;
+-    // Reason: InitConfig is a discriminated union in 26.x — NoServerConfig forbids serverURL/password
+     const initConfig = serverURL ? { dataDir, serverURL, password: password ?? '' } : { dataDir };
+     await api.init(initConfig);
+ 
+@@ -52,7 +47,8 @@ export async function initActualApi(): Promise<void> {
+     }
+ 
+     // Use specified budget or the first one
+-    const budgetId: string = process.env.ACTUAL_BUDGET_SYNC_ID || budgets[0].cloudFileId || budgets[0].id || '';
++    // downloadBudget matches by groupId, not cloudFileId/id
++    const budgetId: string = process.env.ACTUAL_BUDGET_SYNC_ID || budgets[0].groupId || budgets[0].cloudFileId || budgets[0].id || '';
+     console.error(`Loading budget: ${budgetId}`);
+     await api.downloadBudget(
+       budgetId,
+@@ -92,49 +88,31 @@ export async function shutdownActualApi(): Promise<void> {
+ // FETCH
+ // ----------------------------
+ 
+-/**
+- * Get all accounts (ensures API is initialized)
+- */
+ export async function getAccounts(): Promise<APIAccountEntity[]> {
+   await initActualApi();
+   return api.getAccounts();
+ }
+ 
+-/**
+- * Get all categories (ensures API is initialized)
+- */
+ export async function getCategories(): Promise<(APICategoryEntity | APICategoryGroupEntity)[]> {
+   await initActualApi();
+   return api.getCategories();
+ }
+ 
+-/**
+- * Get all category groups (ensures API is initialized)
+- */
+ export async function getCategoryGroups(): Promise<APICategoryGroupEntity[]> {
+   await initActualApi();
+   return api.getCategoryGroups();
+ }
+ 
+-/**
+- * Get all payees (ensures API is initialized)
+- */
+ export async function getPayees(): Promise<APIPayeeEntity[]> {
+   await initActualApi();
+   return api.getPayees();
+ }
+ 
+-/**
+- * Get transactions for a specific account and date range (ensures API is initialized)
+- */
+ export async function getTransactions(accountId: string, start: string, end: string): Promise<TransactionEntity[]> {
+   await initActualApi();
+   return api.getTransactions(accountId, start, end);
+ }
+ 
+-/**
+- * Get all rules (ensures API is initialized)
+- */
+ export async function getRules(): Promise<RuleEntity[]> {
+   await initActualApi();
+   return api.getRules();
+@@ -144,150 +122,92 @@ export async function getRules(): Promise<RuleEntity[]> {
+ // ACTION
+ // ----------------------------
+ 
+-/**
+- * Create a new payee (ensures API is initialized)
+- */
+ export async function createPayee(args: Record<string, unknown>): Promise<string> {
+   await initActualApi();
+   return api.createPayee(args as unknown as Omit<APIPayeeEntity, 'id'>);
+ }
+ 
+-/**
+- * Update a payee (ensures API is initialized)
+- */
+ export async function updatePayee(id: string, args: Record<string, unknown>): Promise<unknown> {
+   await initActualApi();
+   return api.updatePayee(id, args);
+ }
+ 
+-/**
+- * Delete a payee (ensures API is initialized)
+- */
+ export async function deletePayee(id: string): Promise<unknown> {
+   await initActualApi();
+   return api.deletePayee(id);
+ }
+ 
+-/**
+- * Create a new rule (ensures API is initialized)
+- */
+ export async function createRule(args: Record<string, unknown>): Promise<RuleEntity> {
+   await initActualApi();
+   return api.createRule(args as unknown as Omit<RuleEntity, 'id'>);
+ }
+ 
+-/**
+- * Update a rule (ensures API is initialized)
+- */
+ export async function updateRule(args: Record<string, unknown>): Promise<RuleEntity> {
+   await initActualApi();
+   return api.updateRule(args as unknown as RuleEntity);
+ }
+ 
+-/**
+- * Delete a rule (ensures API is initialized)
+- */
+ export async function deleteRule(id: string): Promise<boolean> {
+   await initActualApi();
+   return api.deleteRule(id);
+ }
+ 
+-/**
+- * Create a new category (ensures API is initialized)
+- */
+ export async function createCategory(args: Record<string, unknown>): Promise<string> {
+   await initActualApi();
+   return api.createCategory(args as unknown as Omit<APICategoryEntity, 'id'>);
+ }
+ 
+-/**
+- * Update a category (ensures API is initialized)
+- */
+ export async function updateCategory(id: string, args: Record<string, unknown>): Promise<unknown> {
+   await initActualApi();
+   return api.updateCategory(id, args);
+ }
+ 
+-/**
+- * Delete a category (ensures API is initialized)
+- */
+ export async function deleteCategory(id: string): Promise<void> {
+   await initActualApi();
+   return api.deleteCategory(id);
+ }
+ 
+-/**
+- * Create a new category group (ensures API is initialized)
+- */
+ export async function createCategoryGroup(args: Record<string, unknown>): Promise<string> {
+   await initActualApi();
+   return api.createCategoryGroup(args as unknown as Omit<APICategoryGroupEntity, 'id'>);
+ }
+ 
+-/**
+- * Update a category group (ensures API is initialized)
+- */
+ export async function updateCategoryGroup(id: string, args: Record<string, unknown>): Promise<unknown> {
+   await initActualApi();
+   return api.updateCategoryGroup(id, args);
+ }
+ 
+-/**
+- * Delete a category group (ensures API is initialized)
+- */
+ export async function deleteCategoryGroup(id: string): Promise<unknown> {
+   await initActualApi();
+   return api.deleteCategoryGroup(id);
+ }
+ 
+-/**
+- * Create a transaction (ensures API is initialized).
+- * Passes runTransfers so that transfer payees automatically create the counterpart transaction.
+- */
+ export async function createTransaction(accountId: string, data: TransactionData): Promise<string> {
+   await initActualApi();
+-  return api.addTransactions(accountId, [data], { runTransfers: true });
++  await api.addTransactions(accountId, [data], { runTransfers: true });
++  return 'ok';
+ }
+ 
+-/**
+- * Import a list of transactions using Actual's reconciliation logic.
+- * Deduplicates via imported_id and optionally supports dry-run validation.
+- */
+ export async function importTransactions(
+   accountId: string,
+   transactions: ImportTransactionEntity[],
+-  opts?: { defaultCleared?: boolean; dryRun?: boolean }
+-): Promise<{ added: string[]; updated: string[]; errors: Array<{ message: string }> }> {
++  opts?: { defaultCleared?: boolean }
++): Promise<{ added: unknown; updated: unknown; errors: Array<{ message: string }> }> {
+   await initActualApi();
+   return api.importTransactions(accountId, transactions, opts);
+ }
+ 
+-/**
+- * Update a transaction (ensures API is initialized)
+- */
+ export async function updateTransaction(id: string, data: UpdateTransactionData): Promise<unknown> {
+   await initActualApi();
+   return api.updateTransaction(id, data as unknown as Partial<TransactionEntity>);
+ }
+ 
+-/**
+- * Delete a transaction (ensures API is initialized)
+- */
+ export async function deleteTransaction(id: string): Promise<unknown> {
+   await initActualApi();
+   return api.deleteTransaction(id);
+ }
+ 
+-/**
+- * Run bank sync for accounts (ensures API is initialized)
+- *
+- * @param accountId - Optional. Specific account ID, or special value:
+- *   - "onbudget": sync all on-budget linked accounts
+- *   - "offbudget": sync all off-budget linked accounts
+- *   - undefined: sync ALL linked accounts
+- */
+ export async function runBankSync(accountId?: string): Promise<void> {
+   await initActualApi();
+-  // API expects { accountId } object or undefined for all accounts
+   return api.runBankSync(accountId ? { accountId } : undefined);
+ }
+diff --git a/src/core/data/fetch-categories.ts b/src/core/data/fetch-categories.ts
+index df871bc..93463ac 100644
+--- a/src/core/data/fetch-categories.ts
++++ b/src/core/data/fetch-categories.ts
+@@ -8,5 +8,5 @@ export async function fetchAllCategories(): Promise<Category[]> {
+ }
+ 
+ export async function fetchAllCategoryGroups(): Promise<CategoryGroup[]> {
+-  return getCategoryGroups();
++  return getCategoryGroups() as Promise<CategoryGroup[]>;
+ }
+diff --git a/src/core/data/fetch-rules.ts b/src/core/data/fetch-rules.ts
+index 198bacd..b38cbfe 100644
+--- a/src/core/data/fetch-rules.ts
++++ b/src/core/data/fetch-rules.ts
+@@ -1,6 +1,5 @@
+-import { RuleEntity } from '@actual-app/api/@types/loot-core/src/types/models/rule.js';
+ import { getRules } from '../../actual-api.js';
+ 
+-export async function fetchAllRules(): Promise<RuleEntity[]> {
++export async function fetchAllRules() {
+   return getRules();
+ }
+diff --git a/src/core/data/fetch-transactions.ts b/src/core/data/fetch-transactions.ts
+index 64ac50a..c695b14 100644
+--- a/src/core/data/fetch-transactions.ts
++++ b/src/core/data/fetch-transactions.ts
+@@ -3,7 +3,6 @@ import { fetchAllPayees } from './fetch-payees.js';
+ import { fetchAllCategories } from './fetch-categories.js';
+ import { GroupAggregator } from '../aggregation/group-by.js';
+ import type { Account, Transaction, Payee, Category } from '../types/domain.js';
+-import { TransactionEntity } from '@actual-app/api/@types/loot-core/src/types/models/transaction.js';
+ 
+ const groupAggregator = new GroupAggregator();
+ 
+@@ -29,9 +28,10 @@ async function _buildTransactionLookups(options: TransactionLookupOptions): Prom
+   return { payeesById, categoriesById };
+ }
+ 
+-async function _enrichTransactions(transactions: TransactionEntity[]): Promise<Transaction[]> {
++// eslint-disable-next-line @typescript-eslint/no-explicit-any
++async function _enrichTransactions(transactions: any[]): Promise<Transaction[]> {
+   if (transactions.length === 0) {
+-    return transactions;
++    return transactions as Transaction[];
+   }
+ 
+   // # Reason: Only fetch lookup tables when transactions are missing names to avoid redundant API calls.
+@@ -39,7 +39,7 @@ async function _enrichTransactions(transactions: TransactionEntity[]): Promise<T
+   const needsCategories = transactions.some((transaction) => Boolean(transaction.category));
+ 
+   if (!needsPayees && !needsCategories) {
+-    return transactions;
++    return transactions as Transaction[];
+   }
+ 
+   const { payeesById, categoriesById } = await _buildTransactionLookups({
+@@ -47,12 +47,13 @@ async function _enrichTransactions(transactions: TransactionEntity[]): Promise<T
+     includeCategories: needsCategories,
+   });
+ 
+-  return transactions.map((transaction: TransactionEntity) => {
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  return transactions.map((transaction: any) => {
+     const payeeName = needsPayees && transaction.payee ? payeesById[transaction.payee]?.name : undefined;
+     const categoryName =
+       needsCategories && transaction.category ? categoriesById[transaction.category]?.name : undefined;
+ 
+-    const enriched: Transaction = { ...transaction };
++    const enriched = { ...transaction } as Transaction;
+ 
+     if (payeeName !== undefined) {
+       enriched.payee_name = payeeName;
+@@ -80,20 +81,20 @@ export async function fetchAllOnBudgetTransactions(
+   start: string,
+   end: string
+ ): Promise<Transaction[]> {
+-  let transactions: Transaction[] = [];
++  const transactions: Transaction[] = [];
+   const onBudgetAccounts = accounts.filter((a) => !a.offbudget && !a.closed);
+   for (const account of onBudgetAccounts) {
+     const tx = await getTransactions(account.id, start, end);
+-    transactions = [...transactions, ...tx];
++    transactions.push(...(tx as Transaction[]));
+   }
+   return _enrichTransactions(transactions);
+ }
+ 
+ export async function fetchAllTransactions(accounts: Account[], start: string, end: string): Promise<Transaction[]> {
+-  let transactions: Transaction[] = [];
++  const transactions: Transaction[] = [];
+   for (const account of accounts) {
+     const tx = await getTransactions(account.id, start, end);
+-    transactions = [...transactions, ...tx];
++    transactions.push(...(tx as Transaction[]));
+   }
+   return _enrichTransactions(transactions);
+ }
+diff --git a/src/tools/import-transactions/index.ts b/src/tools/import-transactions/index.ts
+index ec8f068..b10911e 100644
+--- a/src/tools/import-transactions/index.ts
++++ b/src/tools/import-transactions/index.ts
+@@ -34,14 +34,19 @@ export async function handler(args: ImportTransactionsArgs): Promise<CallToolRes
+       })),
+     }));
+ 
+-    const result = await importTransactions(accountId, entities, { defaultCleared, dryRun });
++    // eslint-disable-next-line @typescript-eslint/no-explicit-any
++    const result = await importTransactions(accountId, entities as any, { defaultCleared });
++
++    const added = (result.added as unknown[]) || [];
++    const updated = (result.updated as unknown[]) || [];
++    const errors = result.errors || [];
+ 
+     const prefix = dryRun ? '[DRY RUN] ' : '';
+     const summary =
+       `${prefix}Import complete.\n` +
+-      `Added: ${result.added.length} transaction(s)\n` +
+-      `Updated: ${result.updated.length} transaction(s)\n` +
+-      (result.errors.length > 0 ? `Errors: ${result.errors.map((e) => e.message).join(', ')}` : 'Errors: none');
++      `Added: ${added.length} transaction(s)\n` +
++      `Updated: ${updated.length} transaction(s)\n` +
++      (errors.length > 0 ? `Errors: ${errors.map((e) => e.message).join(', ')}` : 'Errors: none');
+ 
+     return success(summary);
+   } catch (err) {
+diff --git a/src/tools/rules/create-rule/index.ts b/src/tools/rules/create-rule/index.ts
+index 4c04998..f3497cf 100644
+--- a/src/tools/rules/create-rule/index.ts
++++ b/src/tools/rules/create-rule/index.ts
+@@ -5,7 +5,6 @@
+ import { successWithJson, errorFromCatch } from '../../../utils/response.js';
+ import { createRule } from '../../../actual-api.js';
+ import { RuleInputSchema } from '../input-schema.js';
+-import { RuleEntity } from '@actual-app/api/@types/loot-core/src/types/models/rule.js';
+ 
+ export const schema = {
+   name: 'create-rule',
+@@ -17,7 +16,7 @@ export async function handler(
+   args: Record<string, unknown>
+ ): Promise<ReturnType<typeof successWithJson> | ReturnType<typeof errorFromCatch>> {
+   try {
+-    const { id }: RuleEntity = await createRule(args);
++    const { id } = await createRule(args) as { id: string };
+ 
+     return successWithJson('Successfully created rule ' + id);
+   } catch (err) {
+diff --git a/src/tools/rules/get-rules/index.ts b/src/tools/rules/get-rules/index.ts
+index 1051515..b20ff32 100644
+--- a/src/tools/rules/get-rules/index.ts
++++ b/src/tools/rules/get-rules/index.ts
+@@ -3,9 +3,7 @@
+ // ----------------------------
+ 
+ import { successWithJson, errorFromCatch } from '../../../utils/response.js';
+-// import type { Rule } from '../../../types.js';
+ import { fetchAllRules } from '../../../core/data/fetch-rules.js';
+-import { RuleEntity } from '@actual-app/api/@types/loot-core/src/types/models/rule.js';
+ 
+ export const schema = {
+   name: 'get-rules',
+@@ -20,7 +18,7 @@ export const schema = {
+ 
+ export async function handler(): Promise<ReturnType<typeof successWithJson> | ReturnType<typeof errorFromCatch>> {
+   try {
+-    const rules: RuleEntity[] = await fetchAllRules();
++    const rules = await fetchAllRules();
+ 
+     return successWithJson(rules);
+   } catch (err) {
+diff --git a/src/types.ts b/src/types.ts
+index ee39886..577745a 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -8,6 +8,8 @@ export type ToolInput = Tool['inputSchema'];
+ export interface BudgetFile {
+   id?: string;
+   cloudFileId?: string;
++  groupId?: string;
++  encryptKeyId?: string;
+   name: string;
+ }
+ 

@@ -47,27 +47,90 @@
 - **actual-server**（`/modules/actual-server`）：官方同步服务器，内置 Web 前端。存放预算文件（SQLite），提供 HTTP API。
 - **actual-mcp**（`/modules/actual-mcp`）：社区 MCP Server，把 Actual API 包装成 MCP 协议，暴露 25 个工具（读写交易、分类、收款人、规则、银行同步等）。
 
-### 部署
+### 初次部署
 
-#### 1. 启动 actual-server
+从零开始在一台新机器（或云服务器）上部署整个项目。
+
+#### 环境要求
+
+- **Docker** — 运行 actual-server
+- **Node.js 22+** — 运行 actual-mcp（推荐 [fnm](https://github.com/Schniz/fnm) 管理版本）
+- **Python 3.12+** — 运行 Jarvis REPL
+- **uv** — Python 包管理器
+
+#### 1. 克隆项目
+
+```bash
+git clone --recurse-submodules <repo-url>
+cd jarvis-custom
+```
+
+#### 2. 配置环境变量
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入 DeepSeek API Key
+```
+
+#### 3. 启动 MCP 基础设施
+
+```bash
+./start-mcp.sh
+```
+
+这个脚本会自动完成：
+1. 将 `patches/` 中的修复补丁应用到 submodule（无需手动改 submodule 代码）
+2. 安装 npm 依赖 + 编译 TypeScript
+3. 启动 actual-server Docker 容器
+4. 启动 actual-mcp SSE 服务（端口 3000，Node 22）
+
+#### 4. 创建预算文件
+
+浏览器打开 `http://localhost:5006`，设置登录密码，**创建服务器端文件**（Server File），不能是仅浏览器本地存储的文件，否则 MCP 读不到。
+
+#### 5. 启动 Jarvis
+
+```bash
+uv run src/main.py
+```
+
+### 日常启动
+
+第二次及以后启动，只需两步：
+
+```bash
+# 终端 1：启动 MCP 基础设施（Docker + MCP SSE）
+./start-mcp.sh
+
+# 终端 2：启动 Jarvis REPL
+uv run src/main.py
+```
+
+停止：
+
+```bash
+./stop-mcp.sh          # 停止 MCP 和 Docker
+# Jarvis 终端按 Ctrl+C 退出
+```
+
+### 部署架构细节
+
+#### actual-server
 
 ```bash
 cd modules/actual-server
 docker compose up -d
 ```
 
-服务跑在 `http://localhost:5006`，首次打开需设置密码（bootstrap）。
+服务跑在 `http://localhost:5006`。
 
 数据存放在 `modules/actual-server/actual-data/`：
 - `server-files/account.sqlite` — 账户/会话/文件元信息
 - `user-files/file-*.blob` — 预算文件（加密 zip）
 - `user-files/group-*.sqlite` — 同步消息数据库
 
-#### 2. 创建预算文件
+#### 验证预算文件
 
-浏览器打开 `http://localhost:5006`，登录后**必须创建服务器端文件**（Server File），不能是仅浏览器本地存储的文件，否则 MCP 读不到。
-
-验证预算文件存在：
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:5006/account/login \
   -H 'Content-Type: application/json' \
@@ -76,15 +139,9 @@ curl -s http://localhost:5006/sync/list-user-files -H "X-ACTUAL-TOKEN: $TOKEN"
 # 应返回非空 data 数组
 ```
 
-#### 3. 部署 actual-mcp
+#### actual-mcp 其他启动方式
 
-```bash
-cd modules/actual-mcp
-npm install
-npm run build
-```
-
-##### 方式 A：Claude Desktop stdio 配置（推荐日常用）
+##### 方式 A：Claude Desktop stdio 配置
 
 编辑 `~/Library/Application Support/Claude/claude_desktop_config.json`：
 
@@ -108,26 +165,32 @@ npm run build
 
 Claude Desktop 会自动管理进程启停。
 
-##### 方式 B：SSE 服务（开发调试 / 远程访问）
+##### 方式 B：手动 SSE 服务
 
 ```bash
 cd modules/actual-mcp
+npm install && npm run build
 ACTUAL_SERVER_URL=http://localhost:5006 \
 ACTUAL_PASSWORD=你的密码 \
-node build/index.js --sse --port 3000 --enable-write
+fnm exec --using=22 node build/index.js --sse --port 3000 --enable-write
 ```
 
-然后用 Python MCP 客户端或其他 MCP 工具连接 `http://localhost:3000/sse`（SSE 传输）或 `http://localhost:3000/mcp`（Streamable HTTP 传输）。
+然后用 Python MCP 客户端连接 `http://localhost:3000/sse`（SSE）或 `http://localhost:3000/mcp`（Streamable HTTP）。
 
-##### 方式 C：一键脚本
+#### patch 机制
 
-```bash
-# 启动（自动拉起 Docker + 编译 + 启动 SSE）
-./start-mcp.sh
+`start-mcp.sh` 启动时会自动将 `patches/` 目录下的 `.patch` 文件应用到对应 submodule。这解决了两个问题：
 
-# 停止
-./stop-mcp.sh
-```
+- submodule 的第三方仓库我们没有推送权限，无法提交修复
+- `git clone` 后 submodule 是干净的官方代码，需要补丁才能正常运行
+
+补丁文件（`patches/actual-mcp.patch`）包含：
+- `@actual-app/api` 版本升级（26.3.0 → 26.5.2）
+- v25 → v26 import 路径迁移
+- `downloadBudget` groupId 修复
+- 其他工具函数的类型修正
+
+重启时如果补丁已应用，脚本会自动跳过。
 
 ### 环境变量
 

@@ -127,8 +127,11 @@ uv run src/main.py
 停止：
 
 ```bash
-./stop-mcp.sh          # 停止 MCP 和 Docker
 # Chainlit/Jarvis 终端按 Ctrl+C 退出
+# 如果进程卡住不释放端口：
+lsof -ti :8000 | xargs kill
+
+./stop-mcp.sh          # 停止 MCP 和 Docker
 ```
 
 ### 部署架构细节

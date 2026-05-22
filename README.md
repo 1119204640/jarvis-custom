@@ -23,6 +23,13 @@
 
 #### web 交互：[chainlit](https://github.com/chainlit/chainlit)
 
+`src/app.py` 使用 Chainlit 装饰器（`@cl.on_chat_start` / `@cl.on_message`）将终端 REPL 替换为 Web UI：
+
+- `@cl.on_chat_start` — 创建 Agent、连接 MCP、初始化聊天历史
+- `@cl.on_message` — 调用 `agent.astream()` 流式输出到 Chainlit 前端
+
+启动后浏览器访问 `http://localhost:8000`。
+
 ### 后端
 
 #### 日志打印：[loguru](https://github.com/Delgan/loguru)
@@ -35,14 +42,6 @@
 
 ### 架构
 
-```
-┌─────────────┐   HTTP/5006    ┌──────────────────┐   MCP/stdio/SSE   ┌──────────────┐
-│ actual-server │ ◄──────────── │   actual-mcp      │ ◄─────────────── │  Claude       │
-│ (Docker)     │               │  (Node.js)        │                  │  Desktop      │
-│ SQLite 存储   │               │  @actual-app/api  │                  │  / Codex      │
-│ Web UI       │               │  25 个 MCP tools   │                  │              │
-└─────────────┘               └──────────────────┘                  └──────────────┘
-```
 
 - **actual-server**（`/modules/actual-server`）：官方同步服务器，内置 Web 前端。存放预算文件（SQLite），提供 HTTP API。
 - **actual-mcp**（`/modules/actual-mcp`）：社区 MCP Server，把 Actual API 包装成 MCP 协议，暴露 25 个工具（读写交易、分类、收款人、规则、银行同步等）。
@@ -91,12 +90,31 @@ cp .env.example .env
 #### 5. 启动 Jarvis
 
 ```bash
+# Web UI（推荐）
+uv run chainlit run src/app.py
+# 浏览器打开 http://localhost:8000
+
+# 或者终端 REPL
 uv run src/main.py
 ```
 
 ### 日常启动
 
 第二次及以后启动，只需两步：
+
+**方式 A：Web UI（推荐）**
+
+```bash
+# 终端 1：启动 MCP 基础设施（Docker + MCP SSE）
+./start-mcp.sh
+
+# 终端 2：启动 Chainlit Web UI
+uv run chainlit run src/app.py
+```
+
+浏览器打开 `http://localhost:8000` 即可交互。
+
+**方式 B：终端 REPL**
 
 ```bash
 # 终端 1：启动 MCP 基础设施（Docker + MCP SSE）
@@ -110,7 +128,7 @@ uv run src/main.py
 
 ```bash
 ./stop-mcp.sh          # 停止 MCP 和 Docker
-# Jarvis 终端按 Ctrl+C 退出
+# Chainlit/Jarvis 终端按 Ctrl+C 退出
 ```
 
 ### 部署架构细节

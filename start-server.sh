@@ -35,6 +35,18 @@ fi
 # 2. Start actual-server (Docker)
 # ---------------------------------------------------------------------------
 echo "==> Checking actual-server..."
+
+# Ensure custom-sw.js is in place (replaces aggressive Workbox service worker)
+if [ ! -f "$SERVER_DIR/custom-sw.js" ]; then
+  cp "$SCRIPT_DIR/custom-sw.js" "$SERVER_DIR/custom-sw.js"
+fi
+# Add volume mount for custom-sw.js to docker-compose.yml if not already present
+if ! grep -q "custom-sw.js" "$SERVER_COMPOSE"; then
+  sed -i '' '/volumes:/a\
+      - ./custom-sw.js:/app/node_modules/@actual-app/web/build/sw.js
+' "$SERVER_COMPOSE"
+fi
+
 if docker ps --format '{{.Names}}' | grep -q "actual-server"; then
   echo "    actual-server is already running."
 else

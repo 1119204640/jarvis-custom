@@ -16,7 +16,7 @@ from langchain_core.messages import HumanMessage
 from loguru import logger
 
 from server.actual_api import ActualBudgetClient
-from utils.constants import LLM_MODEL, LLM_KEY, LLM_URL, SYSTEM_PROMPT
+from server.constants import LLM_MODEL, LLM_KEY, LLM_URL, SYSTEM_PROMPT
 
 
 class Agent:

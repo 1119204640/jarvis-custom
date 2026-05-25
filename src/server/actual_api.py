@@ -22,7 +22,7 @@ from mcp.types import CallToolResult, Tool
 from pydantic import BaseModel, Field, create_model
 from loguru import logger
 
-from utils.constants import ACTUAL_API_URL
+from server.constants import ACTUAL_API_URL
 
 # ---------------------------------------------------------------------------
 # JSON Schema → Pydantic model

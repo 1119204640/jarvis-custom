@@ -1,8 +1,8 @@
 """
-Jarvis — Chainlit web UI entry point.
+Jarvis — Chainlit web client.
 
 Usage:
-    uv run chainlit run src/app.py
+    uv run chainlit run src/client/chainlit_web.py
 """
 
 import chainlit as cl

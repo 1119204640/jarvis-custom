@@ -17,18 +17,27 @@
 ### 财务记账
 - Actual Budget
 
+### 邮件通知
+
 ## 框架
 
 ### 前端
 
-#### web 交互：[chainlit](https://github.com/chainlit/chainlit)
+#### Web 交互：[chainlit](https://github.com/chainlit/chainlit)（可选）
 
-`src/app.py` 使用 Chainlit 装饰器（`@cl.on_chat_start` / `@cl.on_message`）将终端 REPL 替换为 Web UI：
+Chainlit 降级为可选 Web 客户端。核心后端是独立 FastAPI + Socket.IO 服务端（`src/server/server.py`），所有客户端（终端 REPL / Flutter / Chainlit）都可选择使用。
 
-- `@cl.on_chat_start` — 创建 Agent、连接 MCP、初始化聊天历史
-- `@cl.on_message` — 调用 `agent.astream()` 流式输出到 Chainlit 前端
+服务端端口 8000，Socket.IO 路径 `/ws/socket.io`。
 
-启动后浏览器访问 `http://localhost:8000`。
+**客户端选项**：
+
+| 客户端 | 入口 | 说明 |
+|--------|------|------|
+| 终端 REPL | `uv run python src/client/terminal_client.py` | Socket.IO 客户端，流式输出到终端 |
+| Flutter | `src/client/flutter_application_1/` | 移动/桌面/Web App |
+| Chainlit Web | `uv run chainlit run src/client/chainlit_web.py` | 浏览器访问 `http://localhost:8000` |
+
+`src/client/chainlit_web.py` 使用 Chainlit 装饰器（`@cl.on_chat_start` / `@cl.on_message`），直接调用 Agent（不经过 Socket.IO，与独立服务端并行）。
 
 ### 后端
 
@@ -90,44 +99,60 @@ cp .env.example .env
 #### 5. 启动 Jarvis
 
 ```bash
-# Web UI（推荐）
-uv run chainlit run src/app.py
-# 浏览器打开 http://localhost:8000
+# 一体化启动（推荐）
+./start-server.sh
 
-# 或者终端 REPL
-uv run src/main.py
+# 或者手动分步启动
+./start-mcp.sh                    # 终端 1：MCP 基础设施
+uv run python -m server.server     # 终端 2：Jarvis 服务端（端口 8000）
+```
+
+然后任选客户端交互：
+
+```bash
+# 终端 REPL
+uv run python src/client/terminal_client.py
+
+# Flutter（需要 Flutter SDK）
+cd src/client/flutter_application_1 && flutter run -d chrome
+
+# Chainlit Web UI（可选）
+uv run chainlit run src/client/chainlit_web.py    # 浏览器打开 http://localhost:8000
 ```
 
 ### 日常启动
 
-第二次及以后启动，只需两步：
+第二次及以后启动：
 
-**方式 A：Web UI（推荐）**
+**方式 A：一体化启动（推荐 — 同时启动 MCP 基础设施 + Jarvis 服务端）**
+
+```bash
+./start-server.sh
+```
+
+这会自动完成：启动 actual-server Docker → 编译 actual-mcp → 启动 MCP SSE（端口 3000）→ 启动 Jarvis 服务端（端口 8000）。
+
+然后任选一个客户端：
+- 终端 REPL：`uv run python src/client/terminal_client.py`
+- Flutter：`cd src/client/flutter_application_1 && flutter run -d chrome`
+- Chainlit Web：`./start-chainlit.sh`（可选，浏览器打开 `http://localhost:8000`）
+
+**方式 B：Web UI（Chainlit 独立运行）**
 
 ```bash
 # 终端 1：启动 MCP 基础设施（Docker + MCP SSE）
 ./start-mcp.sh
 
 # 终端 2：启动 Chainlit Web UI
-uv run chainlit run src/app.py
+uv run chainlit run src/client/chainlit_web.py
 ```
 
 浏览器打开 `http://localhost:8000` 即可交互。
 
-**方式 B：终端 REPL**
-
-```bash
-# 终端 1：启动 MCP 基础设施（Docker + MCP SSE）
-./start-mcp.sh
-
-# 终端 2：启动 Jarvis REPL
-uv run src/main.py
-```
-
 停止：
 
 ```bash
-# Chainlit/Jarvis 终端按 Ctrl+C 退出
+# 服务端 / Chainlit / Jarvis 终端按 Ctrl+C 退出
 # 如果进程卡住不释放端口：
 lsof -ti :8000 | xargs kill
 

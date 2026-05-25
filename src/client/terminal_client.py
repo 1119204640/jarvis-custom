@@ -35,7 +35,7 @@ async def repl() -> None:
     print("║  命令：                                   ║")
     print("║    /help   — 显示帮助信息                  ║")
     print("║    /clear  — 清空对话历史                  ║")
-    print("║    /exit   — 完全退出程序                  ║")
+    print("║    /exit   — 退出程序                       ║")
     print("╚══════════════════════════════════════════╝")
     print()
 

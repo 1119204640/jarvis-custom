@@ -197,3 +197,67 @@ flutter test          # 运行测试
 **热重载（Hot Reload）**：代码改了保存，App 瞬间更新，不用重启，状态保留。
 
 ## 踩坑及解决记录
+
+### 1. AI 返回的 Markdown 不渲染
+
+**现象**：LLM 返回的 Markdown 内容（标题、代码块、列表、加粗等）在 Flutter 中显示为原始文本，`###`、`**` 等语法字符肉眼可见。
+
+**原因**：消息通过 `ChatBubble` 渲染，内部使用 Flutter 原生 `Text` widget 直接展示 `message.content`，没有任何 Markdown 解析。
+
+**解决**：添加 `flutter_markdown` 依赖（`pubspec.yaml`），新建 `AiMessage` 组件，用 `MarkdownBody` 替代 `Text` 渲染 AI 回复：
+
+```dart
+MarkdownBody(
+  data: message.content,
+  selectable: true,
+  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
+)
+```
+
+`MarkdownBody` 不需要自己的 `ScrollController`，放在 `ListView` 里不会产生滚动冲突。
+
+### 2. 用户消息发送后不显示
+
+**现象**：输入框发送消息后，对话列表中看不到自己发的消息，只能看到 AI 的回复。
+
+**原因**：`HomeScreen._sendMessage()` 中只调用了 `_chatService.sendMessage(text)` 将消息通过 Socket.IO 发往服务端，但没有创建 `ChatMessage` 对象加入本地 `_messages` 列表。数据发出去了，UI 不知道它的存在。
+
+**解决**：发送前先将用户消息加入 `_messages`，`setState` 触发重绘：
+
+```dart
+void _sendMessage(String text) {
+  if (!_isConnected) return;
+  final userMessage = ChatMessage(
+    id: const Uuid().v4(),
+    role: 'user',
+    content: text,
+    createdAt: DateTime.now(),
+  );
+  setState(() => _messages.add(userMessage));
+  _scrollToBottom();
+  _chatService.sendMessage(text);
+}
+```
+
+### 3. 消息布局改造：用户气泡 + AI 全宽块
+
+**现象**：用户消息和 AI 回复都用同一种气泡样式，不符合主流 AI 聊天应用的交互习惯。
+
+**需求**：用户消息用气泡、AI 回复无气泡全宽显示 Markdown（类似 Gemini / ChatGPT）。
+
+**改动**：
+
+- `ChatBubble` 简化为仅处理 `role == 'user'` 的消息（右对齐 + 紫色背景气泡，去掉角色标签和 AI 分支）
+- 新建 `AiMessage` 组件：全宽 `MarkdownBody`，无气泡包裹，流式传输时尾部显示闪烁光标
+- `HomeScreen` 的 `ListView.builder` 按 `message.role` 分流：
+
+```dart
+itemBuilder: (context, index) {
+  final message = _messages[index];
+  if (message.role == 'user') {
+    return ChatBubble(message: message);
+  } else {
+    return AiMessage(message: message);
+  }
+},
+```

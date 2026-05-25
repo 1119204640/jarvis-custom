@@ -3,3 +3,4 @@
 - 自己写的代码在 /src 里面，用到的第三方库（从 GitHub 上面下载的）放在/modules 里面
 - 客户端代码在 /src/client，用的是 flutter；服务端代码在 /src/server
 - 遇到的所有难题和解决方法都要记录到根目录的 readme.md 中
+- 如果难题属于 flutter 客户端的，则记录进/jarvis-custom/src/client/flutter_application_1项目下的README.md中

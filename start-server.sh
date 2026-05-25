@@ -3,6 +3,7 @@
 # Usage: ./start-server.sh
 
 set -e
+trap 'exit 0' INT TERM
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PATCHES_DIR="$SCRIPT_DIR/patches"
@@ -32,29 +33,62 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2. Start actual-server (Docker)
+# 2. Start actual-server (Docker if available, otherwise native Node.js)
 # ---------------------------------------------------------------------------
 echo "==> Checking actual-server..."
 
-# Ensure custom-sw.js is in place (replaces aggressive Workbox service worker)
-if [ ! -f "$SERVER_DIR/custom-sw.js" ]; then
-  cp "$SCRIPT_DIR/custom-sw.js" "$SERVER_DIR/custom-sw.js"
-fi
-# Add volume mount for custom-sw.js to docker-compose.yml if not already present
-if ! grep -q "custom-sw.js" "$SERVER_COMPOSE"; then
-  sed -i '' '/volumes:/a\
+# Check if Docker daemon is running
+if docker info > /dev/null 2>&1; then
+  echo "    Docker detected, using containerized actual-server."
+
+  cd "$SERVER_DIR"
+
+  # Ensure custom-sw.js is in place for Docker volume mount
+  if [ ! -f "$SERVER_DIR/custom-sw.js" ]; then
+    cp "$SCRIPT_DIR/custom-sw.js" "$SERVER_DIR/custom-sw.js"
+  fi
+  # Add volume mount for custom-sw.js to docker-compose.yml if not already present
+  if ! grep -q "custom-sw.js" "$SERVER_COMPOSE"; then
+    sed -i '' '/volumes:/a\
       - ./custom-sw.js:/app/node_modules/@actual-app/web/build/sw.js
 ' "$SERVER_COMPOSE"
-fi
+  fi
 
-if docker ps --format '{{.Names}}' | grep -q "actual-server"; then
-  echo "    actual-server is already running."
+  if docker ps --format '{{.Names}}' | grep -q "actual-server"; then
+    echo "    actual-server is already running."
+  else
+    echo "    Starting actual-server (Docker, port 5006)..."
+    docker compose -f "$SERVER_COMPOSE" up -d
+    echo "    Waiting for server to be healthy..."
+    until curl -s -o /dev/null http://localhost:5006/health; do sleep 1; done
+    echo "    Server is ready."
+  fi
 else
-  echo "    Starting actual-server..."
-  docker compose -f "$SERVER_COMPOSE" up -d
-  echo "    Waiting for server to be healthy..."
-  until curl -s -o /dev/null http://localhost:5006/health; do sleep 1; done
-  echo "    Server is ready."
+  echo "    Docker not available, using native actual-server."
+
+  cd "$SERVER_DIR"
+
+  # Install dependencies if needed (vendored Yarn Berry)
+  if [ ! -d "node_modules" ]; then
+    echo "    Installing dependencies (yarn)..."
+    node .yarn/releases/yarn-4.3.1.cjs install
+  fi
+
+  # Replace Workbox Service Worker with self-destructing one
+  if [ -f "$SCRIPT_DIR/custom-sw.js" ]; then
+    cp "$SCRIPT_DIR/custom-sw.js" "$SERVER_DIR/node_modules/@actual-app/web/build/sw.js"
+  fi
+
+  if lsof -ti :5006 > /dev/null 2>&1; then
+    echo "    actual-server is already running on port 5006."
+  else
+    echo "    Starting actual-server (native, port 5006)..."
+    ACTUAL_DATA_DIR="$SERVER_DIR/actual-data" \
+    fnm exec --using=22 node app.js &
+    echo "    Waiting for server to be healthy..."
+    until curl -s -o /dev/null http://localhost:5006/health; do sleep 1; done
+    echo "    Server is ready."
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -82,7 +116,8 @@ fi
 # ---------------------------------------------------------------------------
 cd "$SCRIPT_DIR"
 echo "==> Starting Jarvis server on http://localhost:8000..."
-echo "    Terminal REPL:  uv run python src/client/terminal_client.py"
-echo "    Flutter web:    cd src/client/flutter_application_1 && flutter run -d chrome"
-cd "$SCRIPT_DIR/src"
-uv run uvicorn server.server:app --host 0.0.0.0 --port 8000
+echo "    Stop server:   type /stop in this terminal (or Ctrl+C)"
+echo "    Terminal REPL: ./start-client.sh -repl"
+echo "    Chainlit web:  ./start-client.sh -chainlit"
+echo "    Flutter web:   ./start-client.sh -flutter"
+uv run python -m src.server.server

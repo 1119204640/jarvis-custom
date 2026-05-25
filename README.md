@@ -61,10 +61,10 @@ Chainlit 降级为可选 Web 客户端。核心后端是独立 FastAPI + Socket.
 
 #### 环境要求
 
-- **Docker** — 运行 actual-server
-- **Node.js 22+** — 运行 actual-mcp（推荐 [fnm](https://github.com/Schniz/fnm) 管理版本）
+- **Node.js 22+** — 运行 actual-server 和 actual-mcp（推荐 [fnm](https://github.com/Schniz/fnm) 管理版本）
 - **Python 3.12+** — 运行 Jarvis REPL
 - **uv** — Python 包管理器
+- **Docker**（可选）— 如果安装了 Docker，启动脚本优先使用容器化 actual-server；否则自动切换为原生 Node.js 运行
 
 #### 1. 克隆项目
 
@@ -80,44 +80,36 @@ cp .env.example .env
 # 编辑 .env，填入 DeepSeek API Key
 ```
 
-#### 3. 启动 MCP 基础设施
+#### 3. 启动 MCP 基础设施 + Jarvis 服务端
 
 ```bash
-./start-mcp.sh
+./start-server.sh
 ```
 
 这个脚本会自动完成：
 1. 将 `patches/` 中的修复补丁应用到 submodule（无需手动改 submodule 代码）
 2. 安装 npm 依赖 + 编译 TypeScript
-3. 启动 actual-server Docker 容器
+3. 启动 actual-server（有 Docker 用容器，否则自动切换原生 Node.js）
 4. 启动 actual-mcp SSE 服务（端口 3000，Node 22）
+5. 启动 Jarvis 服务端（端口 8000）
+
+服务端启动后，在服务端终端输入 `/stop` 即可优雅关机（保护数据库）。客户端直接 Ctrl+C 退出即可。
 
 #### 4. 创建预算文件
 
 浏览器打开 `http://localhost:5006`，设置登录密码，**创建服务器端文件**（Server File），不能是仅浏览器本地存储的文件，否则 MCP 读不到。
 
-#### 5. 启动 Jarvis
+#### 5. 启动客户端
 
 ```bash
-# 一体化启动（推荐）
-./start-server.sh
+# Flutter web（默认，需要 Flutter SDK）
+./start-client.sh
 
-# 或者手动分步启动
-./start-mcp.sh                    # 终端 1：MCP 基础设施
-uv run python -m server.server     # 终端 2：Jarvis 服务端（端口 8000）
-```
-
-然后任选客户端交互：
-
-```bash
 # 终端 REPL
-uv run python src/client/terminal_client.py
-
-# Flutter（需要 Flutter SDK）
-cd src/client/flutter_application_1 && flutter run -d chrome
+./start-client.sh -repl
 
 # Chainlit Web UI（可选）
-uv run chainlit run src/client/chainlit_web.py    # 浏览器打开 http://localhost:8000
+./start-client.sh -chainlit
 ```
 
 ### 日常启动
@@ -130,33 +122,30 @@ uv run chainlit run src/client/chainlit_web.py    # 浏览器打开 http://local
 ./start-server.sh
 ```
 
-这会自动完成：启动 actual-server Docker → 编译 actual-mcp → 启动 MCP SSE（端口 3000）→ 启动 Jarvis 服务端（端口 8000）。
+这会自动完成：启动 actual-server → 编译 actual-mcp → 启动 MCP SSE（端口 3000）→ 启动 Jarvis 服务端（端口 8000）。
 
 然后任选一个客户端：
-- 终端 REPL：`uv run python src/client/terminal_client.py`
-- Flutter：`cd src/client/flutter_application_1 && flutter run -d chrome`
-- Chainlit Web：`./start-chainlit.sh`（可选，浏览器打开 `http://localhost:8000`）
+- Flutter web：`./start-client.sh`（默认）
+- 终端 REPL：`./start-client.sh -repl`
+- Chainlit Web：`./start-client.sh -chainlit`
 
-**方式 B：Web UI（Chainlit 独立运行）**
-
-```bash
-# 终端 1：启动 MCP 基础设施（Docker + MCP SSE）
-./start-mcp.sh
-
-# 终端 2：启动 Chainlit Web UI
-uv run chainlit run src/client/chainlit_web.py
-```
+**停止服务端**：
+- 在服务端终端输入 `/stop` 优雅关机（推荐，保护数据库）
+- 或 `curl -X POST http://localhost:8000/stop`
+- 客户端直接 Ctrl+C 退出即可
 
 浏览器打开 `http://localhost:8000` 即可交互。
 
-停止：
+停止后端：
 
 ```bash
-# 服务端 / Chainlit / Jarvis 终端按 Ctrl+C 退出
+# 服务端终端输入 /stop 优雅关机
+# 客户端 Ctrl+C 退出
+
 # 如果进程卡住不释放端口：
 lsof -ti :8000 | xargs kill
-
-./stop-mcp.sh          # 停止 MCP 和 Docker
+lsof -ti :5006 | xargs kill   # 停止 actual-server
+lsof -ti :3000 | xargs kill   # 停止 actual-mcp
 ```
 
 ### 部署架构细节
@@ -165,10 +154,17 @@ lsof -ti :8000 | xargs kill
 
 ```bash
 cd modules/actual-server
-docker compose up -d
+
+# 首次运行需安装依赖（使用内置 Yarn Berry，无需全局安装 yarn）
+node .yarn/releases/yarn-4.3.1.cjs install
+
+# 启动（端口 5006）
+ACTUAL_DATA_DIR=./actual-data fnm exec --using=22 node app.js
 ```
 
 服务跑在 `http://localhost:5006`。
+
+Docker 可选——有则用容器，无则自动切换原生 Node.js。实际启动由 `start-server.sh` 自动完成。
 
 数据存放在 `modules/actual-server/actual-data/`：
 - `server-files/account.sqlite` — 账户/会话/文件元信息
@@ -225,18 +221,100 @@ fnm exec --using=22 node build/index.js --sse --port 3000 --enable-write
 
 #### patch 机制
 
-`start-mcp.sh` 启动时会自动将 `patches/` 目录下的 `.patch` 文件应用到对应 submodule。这解决了两个问题：
+`start-server.sh` 启动时会自动将 `patches/` 目录下的 `.patch` 文件应用到对应 submodule。
 
-- submodule 的第三方仓库我们没有推送权限，无法提交修复
-- `git clone` 后 submodule 是干净的官方代码，需要补丁才能正常运行
+**原理**：`.patch` 文件是 `git diff` 的输出快照（unified diff 格式，纯文本，不是二进制）。生成方式：
 
-补丁文件（`patches/actual-mcp.patch`）包含：
+```bash
+cd modules/actual-mcp
+git diff > ../../patches/actual-mcp.patch
+cd modules/actual-server
+git diff > ../../patches/actual-server.patch
+```
+
+由于 `actual-mcp` 和 `actual-server` 是第三方开源项目的 submodule，我们没有推送权限，无法直接提交修改。用 patch 文件保存差异，`git clone --recurse-submodules` 后 submodule 是干净的官方代码，启动脚本自动 apply 补丁。
+
+**`patches/actual-mcp.patch` 包含的修改**：
 - `@actual-app/api` 版本升级（26.3.0 → 26.5.2）
-- v25 → v26 import 路径迁移
-- `downloadBudget` groupId 修复
-- 其他工具函数的类型修正
+- v25 → v26 import 路径迁移（`@actual-app/api/@types/...` → `@actual-app/core/...`）
+- `downloadBudget` 按 groupId 匹配而非 cloudFileId
+- `BudgetFile` 接口增加 `groupId`、`encryptKeyId` 字段
+- 其他工具函数的类型修正（`TransactionEntity` 路径变更等）
 
-重启时如果补丁已应用，脚本会自动跳过。
+**`patches/actual-server.patch`** 包含相同的 API 适配改动（`actual-server` 中也有调用 Actual API 的 TypeScript 代码）。
+
+**格式解读**（unified diff）：
+
+```diff
+--- a/package.json        # 原始文件（a）
++++ b/package.json        # 修改后（b）
+@@ -33,7 +33,7 @@          # 改动在原始文件第33行起，涉及7行
+-    "@actual-app/api": "^26.3.0",   # - 删掉的行
++    "@actual-app/api": "^26.5.2",   # + 新增的行
+```
+
+不带 `-`/`+` 前缀的行是上下文（用于 Git 定位行号）。`package-lock.json` 的差异太大，Git 自动切换为 binary patch（压缩格式），所以打开看起来是乱码，但 `git apply` 能正确还原。
+
+启动脚本中的 apply 逻辑是幂等的——已应用则自动跳过：
+
+```bash
+if git apply --check "$PATCHES_DIR/actual-mcp.patch" 2>/dev/null; then
+  git apply "$PATCHES_DIR/actual-mcp.patch"
+else
+  echo "    Patch already applied or not needed."
+fi
+```
+
+#### polyfill.cjs — Node.js 中注入浏览器 API
+
+根目录的 `polyfill.cjs`（248 字节），在 Node.js 启动时通过 `--require` 预加载，注入 `@actual-app/api` 需要的浏览器全局对象：
+
+```javascript
+// polyfill.cjs
+if (typeof globalThis.navigator === "undefined") {
+  globalThis.navigator = {
+    platform: process.platform,
+    userAgent: "node",
+    language: "en",
+    languages: ["en"],
+  };
+}
+```
+
+**为什么用 `.cjs` 后缀**：`actual-mcp/package.json` 声明了 `"type": "module"`，所有 `.js` 文件被当作 ESM。但 `--require` 使用 CommonJS `require()` 加载，无法加载 ESM。`.cjs` 强制以 CommonJS 方式处理。
+
+启动脚本中通过绝对路径加载（`fnm exec` 可能改变工作目录，必须用绝对路径）：
+
+```bash
+NODE_OPTIONS="--require $SCRIPT_DIR/polyfill.cjs" \
+fnm exec --using=22 node build/index.js --sse --port 3000 --enable-write
+```
+
+#### custom-sw.js — 自毁式 Service Worker
+
+根目录的 `custom-sw.js`（551 字节），替换 Actual Budget 自带的 Workbox Service Worker。
+
+**问题**：Actual 原版 SW 使用 Workbox 激进缓存策略，导致浏览器强制刷新（Cmd+Shift+R）都加载不出新内容，开发时必须手动进 DevTools 删除 SW 和缓存。
+
+**解决**：自毁式 SW，一次激活后自动清除所有缓存并永久注销自身：
+
+```javascript
+self.addEventListener('install', () => {
+  self.skipWaiting();         // 立即接管，不等旧 SW 释放
+});
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then(cacheNames => {
+      return Promise.all(cacheNames.map(name => caches.delete(name)));
+    }).then(() => self.registration.unregister())  // 永久注销
+  );
+});
+```
+
+启动脚本自动部署：
+
+- **Docker 模式**：通过 `sed` 向 `docker-compose.yml` 注入 volume mount，挂载到容器内覆盖原版 `sw.js`
+- **原生模式**：在 `yarn install` 后直接 `cp` 到 `node_modules/@actual-app/web/build/sw.js`
 
 ### 环境变量
 
@@ -332,25 +410,7 @@ sqlite3 actual-data/server-files/account.sqlite "SELECT * FROM files;"
 
 **原因**：`@actual-app/api` v26.5.2 打包时混入了 Actual 前端代码，模块顶层直接引用了 `navigator.platform`、`navigator.userAgent` 等浏览器 API，Node.js 中没有这些全局对象。
 
-**解决**：创建 polyfill 文件 `modules/actual-mcp/polyfill.cjs`，用 `NODE_OPTIONS="--require"` 在模块加载前注入：
-
-```javascript
-// polyfill.cjs
-if (typeof globalThis.navigator === "undefined") {
-  globalThis.navigator = {
-    platform: process.platform,
-    userAgent: "node",
-    language: "en",
-    languages: ["en"],
-  };
-}
-```
-
-`start-mcp.sh` 中通过环境变量加载：
-```bash
-NODE_OPTIONS="--require $MCP_DIR/polyfill.cjs" \
-node build/index.js --sse --port 3000 --enable-write
-```
+**解决**：创建 polyfill 文件（现位于项目根目录 `polyfill.cjs`），用 `NODE_OPTIONS="--require"` 在模块加载前注入。详见上方「polyfill.cjs」章节。
 
 #### 6. `require() of ES Module not supported` — polyfill 文件后缀
 
@@ -358,7 +418,7 @@ node build/index.js --sse --port 3000 --enable-write
 
 **原因**：`actual-mcp/package.json` 中声明了 `"type": "module"`，所有 `.js` 文件被当作 ESM 处理。而 `--require` 使用 CommonJS `require()` 加载，无法加载 ESM 模块。
 
-**解决**：将 polyfill 文件改名为 `.cjs`（CommonJS 后缀），强制以 CJS 方式加载。
+**解决**：将 polyfill 文件改名为 `.cjs`（CommonJS 后缀），强制以 CJS 方式加载。详见上方「polyfill.cjs」章节。
 
 #### 7. SSE 端点和 Streamable HTTP 端点混淆
 
@@ -435,7 +495,7 @@ if isinstance(t, list):
 
 **原因**：`@actual-app/api` v26.x 要求 Node.js 20 或更高版本。本机通过 fnm 安装了 v18.14.0 和 v22.22.3 两个版本，终端默认使用 v18。
 
-**解决**：`start-mcp.sh` 中使用 `fnm exec --using=22` 强制用 Node 22 启动 MCP：
+**解决**：启动脚本中使用 `fnm exec --using=22` 强制用 Node 22 启动 MCP：
 ```bash
 fnm exec --using=22 node build/index.js --sse --port 3000 --enable-write
 ```
@@ -496,7 +556,37 @@ except KeyboardInterrupt:
     pass
 ```
 
-### 验证连接
+#### 14. 去掉 Docker 依赖 — actual-server 双模式兼容运行
+
+**问题**：Docker Desktop 空跑就占 8GB 内存，16GB 机器上经常爆黄导致其他应用闪退。而项目实际只有 `actual-server` 一个组件在用 Docker。
+
+**分析**：`actual-server` 本质是标准 Node.js 应用（Express + better-sqlite3），`app.js` → `src/app.js`，完全可以直接跑。Docker 镜像做的事无非是 `yarn install` + `node app.js`。
+
+**改造方案**：保留两种运行模式，自动检测。`start-server.sh` 启动时先 `docker info` 检测 Docker 是否可用，有则用容器（不动已有环境），无则自动降级为原生 Node.js。数据目录 `actual-data/` 两种模式完全兼容，随时切换。
+
+**原生模式的改造要点**：
+
+1. **依赖安装**：项目自带 Yarn Berry vendored（`.yarn/releases/yarn-4.3.1.cjs`），无需全局安装任何工具。`node .yarn/releases/yarn-4.3.1.cjs install` 即可。
+
+2. **数据目录**：原 Docker 通过 volume `./actual-data:/data` 挂载，`load-config.js` 检测 `/data` 目录存在则用它。原生运行时 `/data` 不存在，自动回退到项目根目录，但实际数据在 `actual-data/`。通过 `ACTUAL_DATA_DIR=./actual-data` 环境变量指定即可兼容已有数据。
+
+3. **自定义 Service Worker**：
+   - Docker 模式：通过 `sed` 向 `docker-compose.yml` 注入 volume mount
+   - 原生模式：`yarn install` 后直接 `cp` 到 `node_modules`
+
+4. **缺失的 migration 文件**：`actual-server` git 仓库已归档，Docker 镜像实际来自新的 `actual/actual` monorepo，比 submodule 多出两个 migration：
+   - `1763873568237-server-global-prefs.js`
+   - `1763873600000-backfill-files-owner.js`
+   
+   从 Docker 镜像提取后放入 `patches/actual-server.patch`，启动脚本自动 apply。同时修复了文件中的 import 问题（新 migration 用 named import `{ getAccountDb }`，但旧版代码是 default export）。
+
+5. **原生启动命令**：
+   ```bash
+   cd modules/actual-server
+   ACTUAL_DATA_DIR=./actual-data fnm exec --using=22 node app.js
+   ```
+
+**效果**：Docker Desktop 可以关闭节省 8GB 内存，`actual-server` 原生运行时内存不到 100MB。如果之后想用回 Docker，只需启动 Docker Desktop，脚本自动切回容器模式。
 
 ```bash
 # MCP 内部连通性测试
@@ -524,3 +614,86 @@ uv run python src/server/test_mcp.py
 1. actual-server 前面挂 nginx/Caddy 做 HTTPS 反向代理
 2. actual-mcp 开启 `--enable-bearer` + `BEARER_TOKEN`
 3. 持久化 `actual-data/` 目录到云盘（SQLite 都在里面）
+
+#### 15. Flutter 客户端不支持 Markdown 渲染
+
+**现象**：LLM 返回的 Markdown 内容（标题、代码块、列表、加粗等）在 Flutter 客户端中显示为原始文本，所有格式语法肉眼可见。
+
+**原因**：AI 回复通过 `ChatBubble` 组件渲染，内部使用 Flutter 原生 `Text` widget 直接展示 `message.content`，没有任何 Markdown 解析。
+
+**解决**：添加 `flutter_markdown` 依赖，创建 `AiMessage` 组件，用 `MarkdownBody` 替代 `Text` 渲染 AI 回复：
+
+```dart
+// pubspec.yaml 新增
+flutter_markdown: ^0.7.6
+
+// ai_message.dart — AI 回复专用组件
+MarkdownBody(
+  data: message.content,
+  selectable: true,
+  styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)),
+)
+```
+
+#### 16. Flutter 客户端用户消息发送后不显示
+
+**现象**：用户在输入框发送消息后，消息凭空消失，对话列表中只能看到 AI 的回复，看不到自己发了什么。
+
+**原因**：`_sendMessage` 中只调用了 `_chatService.sendMessage(text)` 将消息发往 Socket.IO 服务端，但没有创建 `ChatMessage` 对象加入本地的 `_messages` 列表。消息发出去了，但 UI 不知道它的存在。
+
+**解决**：在发送前先将用户消息作为 `ChatMessage` 加入 `_messages`，再调用 `setState` 触发重绘：
+
+```dart
+void _sendMessage(String text) {
+  if (!_isConnected) return;
+  final userMessage = ChatMessage(
+    id: const Uuid().v4(),
+    role: 'user',
+    content: text,
+    createdAt: DateTime.now(),
+  );
+  setState(() => _messages.add(userMessage));
+  _scrollToBottom();
+  _chatService.sendMessage(text);
+}
+```
+
+#### 17. Flutter 客户端消息布局改造 — 用户气泡 + AI 整块显示
+
+**需求**：用户消息用气泡形式回显（右对齐、彩色背景），AI 回复不用气泡，直接在下方整块区域显示 Markdown 内容（类似 Gemini / ChatGPT 的交互方式）。
+
+**改动**：
+
+- `ChatBubble` 简化为仅处理用户消息（右对齐 + 紫色背景气泡）
+- 新建 `AiMessage` 组件：无气泡包裹，全宽 `MarkdownBody` 渲染，流式传输时尾部显示闪烁光标
+- `HomeScreen` 的 `ListView.builder` 按 `message.role` 分流——`user` 用 `ChatBubble`，`assistant` 用 `AiMessage`
+
+#### 18. Python 导入层级错误 — `ModuleNotFoundError: No module named 'server'`
+
+**现象**：`./start-server.sh` 启动时报 `ModuleNotFoundError: No module named 'server'`。
+
+**原因**：项目结构为 `src/server/`（server 包在 src 目录下），但 `src/server/` 内部所有文件使用绝对导入 `from server.xxx import ...`，Python 无法在顶层找到 `server` 包。
+
+**解决**：`src/server/` 包内部改用相对导入，外部引用改用全路径：
+
+| 文件 | 修复前 | 修复后 |
+|------|--------|--------|
+| `src/server/server.py` | `from server.agent import Agent` | `from .agent import Agent` |
+| `src/server/agent.py` | `from server.actual_api import ...` | `from .actual_api import ...` |
+| `src/server/actual_api.py` | `from server.constants import ...` | `from .constants import ...` |
+| `src/client/chainlit_web.py` | `from server.agent import Agent` | `from src.server.agent import Agent` |
+
+#### 19. 服务端 Ctrl+C 退出报 traceback
+
+**现象**：`./start-server.sh` 运行后按 Ctrl+C，出现 `CancelledError` → `KeyboardInterrupt` 异常堆栈，看起来像崩溃。
+
+**原因**：`uvicorn.Server.run()` 内部用 `asyncio.run()` 运行，收到 SIGINT 后抛出 `KeyboardInterrupt`，而 `main()` 函数没有捕获。
+
+**解决**：在 `_server_instance.run()` 外层加 `try/except KeyboardInterrupt`：
+
+```python
+try:
+    _server_instance.run()
+except KeyboardInterrupt:
+    logger.info("Server stopped.")
+```

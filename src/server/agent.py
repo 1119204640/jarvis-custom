@@ -15,8 +15,8 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from loguru import logger
 
-from server.actual_api import ActualBudgetClient
-from server.constants import LLM_MODEL, LLM_KEY, LLM_URL, SYSTEM_PROMPT
+from .actual_api import ActualBudgetClient
+from .constants import LLM_MODEL, LLM_KEY, LLM_URL, SYSTEM_PROMPT
 
 
 class Agent:

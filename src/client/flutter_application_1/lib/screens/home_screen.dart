@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../models/chat_message.dart';
 import '../services/chat_service.dart';
 import '../widgets/sidebar.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/ai_message.dart';
 import '../widgets/message_input.dart';
 
 /// 应用主页面
@@ -121,6 +123,19 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _sendMessage(String text) {
     if (!_isConnected) return;
+
+    // 将用户消息立即加入列表，显示为气泡
+    final userMessage = ChatMessage(
+      id: const Uuid().v4(),
+      role: 'user',
+      content: text,
+      createdAt: DateTime.now(),
+    );
+    setState(() {
+      _messages.add(userMessage);
+    });
+    _scrollToBottom();
+
     _chatService.sendMessage(text);
   }
 
@@ -220,7 +235,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     itemCount: _messages.length,
                     itemBuilder: (context, index) {
-                      return ChatBubble(message: _messages[index]);
+                      final message = _messages[index];
+                      if (message.role == 'user') {
+                        return ChatBubble(message: message);
+                      } else {
+                        return AiMessage(message: message);
+                      }
                     },
                   ),
           ),

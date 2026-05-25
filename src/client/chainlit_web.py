@@ -9,7 +9,7 @@ import chainlit as cl
 from langchain_core.messages import AIMessage, HumanMessage
 from loguru import logger
 
-from server.agent import Agent
+from src.server.agent import Agent
 
 
 @cl.on_chat_start

@@ -13,16 +13,20 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import signal
+import sys
+import threading
 import uuid
 from datetime import datetime, timezone
 
 import socketio
+import uvicorn
 from dotenv import load_dotenv
 from loguru import logger
 
 load_dotenv()
 
-from server.agent import Agent
+from .agent import Agent
 
 # ---------------------------------------------------------------------------
 # Socket.IO server (ASGI mode so it mounts on FastAPI / uvicorn)
@@ -33,6 +37,10 @@ sio = socketio.AsyncServer(
     cors_allowed_origins="*",
     logger=False,
 )
+
+# Reference to the uvicorn Server instance so the /stop endpoint can signal
+# graceful shutdown from within a request handler.
+_server_instance: uvicorn.Server | None = None
 
 # Per-session state: sid → {agent, history, stream_task}
 _sessions: dict[str, dict] = {}
@@ -197,6 +205,19 @@ async def auth_config():
     return {"providers": []}
 
 
+@fastapi_app.post("/stop")
+async def stop_server() -> dict:
+    """Gracefully shut down the Jarvis server.
+
+    Can be called from any client (REPL /stop command, curl, etc.):
+        curl -X POST http://localhost:8000/stop
+    """
+    logger.info("Shutdown requested via /stop endpoint")
+    if _server_instance is not None:
+        _server_instance.should_exit = True
+    return {"status": "shutting_down"}
+
+
 # Wrap the FastAPI app with the Socket.IO ASGI middleware
 # Socket.IO is mounted at /ws/socket.io (the path Flutter already uses)
 app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="ws/socket.io")
@@ -207,10 +228,42 @@ app = socketio.ASGIApp(sio, other_asgi_app=fastapi_app, socketio_path="ws/socket
 # ---------------------------------------------------------------------------
 
 def main() -> None:
-    import uvicorn
+    global _server_instance
+
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+    _server_instance = uvicorn.Server(config)
+
+    # Daemon thread that reads stdin so the user can type /stop in the
+    # server terminal to gracefully shut down (protects database integrity).
+    def _stdin_reader() -> None:
+        while True:
+            try:
+                line = sys.stdin.readline()
+            except (EOFError, OSError):
+                return
+            if not line:
+                return
+            if line.strip() == "/stop":
+                logger.info("Received /stop on stdin, shutting down gracefully...")
+                if _server_instance is not None:
+                    _server_instance.should_exit = True
+                return
+
+    threading.Thread(target=_stdin_reader, daemon=True).start()
+
+    # Clean shutdown on SIGTERM (e.g. from process manager).
+    def _handle_signal(sig: int, frame) -> None:
+        logger.info(f"Received signal {sig}, shutting down...")
+        _server_instance.should_exit = True
+
+    signal.signal(signal.SIGTERM, _handle_signal)
 
     logger.info("Starting Jarvis standalone server on http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    logger.info("  Type /stop here or Ctrl+C to shut down gracefully.")
+    try:
+        _server_instance.run()
+    except KeyboardInterrupt:
+        logger.info("Server stopped.")
 
 
 if __name__ == "__main__":

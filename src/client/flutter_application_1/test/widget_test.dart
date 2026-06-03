@@ -10,6 +10,6 @@ void main() {
     expect(find.text('Jarvis'), findsOneWidget);
 
     // 首页应显示侧边栏中的第一个功能名称
-    expect(find.text('记账'), findsOneWidget);
+    expect(find.text('备忘录'), findsOneWidget);
   });
 }

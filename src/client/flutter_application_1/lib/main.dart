@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'models/queue_job.dart';
 import 'screens/home_screen.dart';
+import 'widgets/queue_status_bar.dart';
 
 /// 应用入口 — 启动 Jarvis AI 秘书客户端
 void main() {
@@ -16,7 +18,6 @@ class JarvisApp extends StatelessWidget {
       title: 'Jarvis',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        // Material You 风格：给一个种子颜色，自动推导整套调色板
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.indigo,
           brightness: Brightness.light,
@@ -31,6 +32,18 @@ class JarvisApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const HomeScreen(),
+      // QueueStatusBar 通过 builder 放在所有路由的底部
+      builder: (context, child) {
+        return Column(
+          children: [
+            Expanded(child: child!),
+            ValueListenableBuilder<List<QueueJob>>(
+              valueListenable: GlobalQueueState.notifier,
+              builder: (context, jobs, child) => QueueStatusBar(jobs: jobs),
+            ),
+          ],
+        );
+      },
     );
   }
 }

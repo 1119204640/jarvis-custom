@@ -1,14 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:uuid/uuid.dart';
+import '../models/attached_file.dart';
 import '../models/chat_message.dart';
+import '../models/queue_job.dart';
+import 'app_config.dart';
 
 /// 与 Chainlit 服务端通信的聊天服务
 ///
-/// 通过 Socket.IO 实时收发消息，支持流式响应。
-/// 服务端地址 http://localhost:8000，Socket.IO 路径 /ws/socket.io。
+/// 通过 Socket.IO 实时收发消息，支持流式响应和文件上传。
+/// 服务端地址来自 AppConfig.serverBaseUrl，Socket.IO 路径 /ws/socket.io。
 class ChatService {
   final String serverUrl;
   final String sessionId;
@@ -24,10 +29,26 @@ class ChatService {
   /// 连接状态变化回调
   void Function(bool connected)? onConnectionChange;
 
+  /// 服务端错误回调（如 LLM API key 未配置）
+  void Function(String message)? onError;
+
+  /// 进度更新回调（文件处理、工具调用等阶段）
+  void Function(String stage, String message)? onProgress;
+
+  /// 服务端日志回调（warning / error 级别）
+  void Function(String level, String message)? onLog;
+
+  /// 数据变更回调（文件处理完成、文档分析完成等）
+  void Function(String action, Map<String, dynamic> data)? onDataChanged;
+
+  /// 队列状态回调（文件处理队列的快照更新）
+  void Function(List<QueueJob> jobs)? onQueueStatus;
+
   ChatService({
-    this.serverUrl = 'http://localhost:8000',
+    String? serverUrl,
     String? sessionId,
-  }) : sessionId = sessionId ?? const Uuid().v4();
+  })  : serverUrl = serverUrl ?? AppConfig.serverBaseUrl,
+        sessionId = sessionId ?? const Uuid().v4();
 
   bool get isConnected => _socket?.connected ?? false;
   String? get threadId => _threadId;
@@ -44,7 +65,6 @@ class ChatService {
           'filter': {},
         }),
       );
-      // 获取已有线程或准备创建新的
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final threads = data['data'] as List? ?? [];
@@ -72,6 +92,7 @@ class ChatService {
 
     _socket!.onConnect((_) {
       onConnectionChange?.call(true);
+      _syncLlmConfig();
     });
 
     _socket!.onDisconnect((_) {
@@ -80,6 +101,12 @@ class ChatService {
 
     _socket!.onConnectError((error) {
       onConnectionChange?.call(false);
+    });
+
+    // 服务端发送的通用错误事件（如 LLM API key 未配置）
+    _socket!.on('error', (data) {
+      final msg = data is Map ? data['message']?.toString() ?? '' : '';
+      onError?.call(msg);
     });
 
     // 服务端发来的各种消息事件
@@ -97,17 +124,84 @@ class ChatService {
 
     _socket!.on('stream_end', (data) {
       final msgId = data is Map ? data['messageId']?.toString() ?? '' : '';
-      // 流式结束，将 isStreaming 置为 false
       if (msgId.isNotEmpty) {
         onStreamUpdate?.call('${msgId}_done', '');
+      }
+    });
+
+    // 服务端进度事件
+    _socket!.on('progress', (data) {
+      if (data is Map) {
+        final stage = data['stage']?.toString() ?? '';
+        final message = data['message']?.toString() ?? '';
+        onProgress?.call(stage, message);
+      }
+    });
+
+    // 服务端日志事件（warning / error 飘窗）
+    _socket!.on('log', (data) {
+      if (data is Map) {
+        final level = data['level']?.toString() ?? '';
+        final message = data['message']?.toString() ?? '';
+        if (level.isNotEmpty && message.isNotEmpty) {
+          onLog?.call(level, message);
+        }
+      }
+    });
+
+    // 服务端数据变更事件（驱动 UI 刷新）
+    _socket!.on('data_changed', (data) {
+      if (data is Map) {
+        final action = data['action']?.toString() ?? '';
+        final payload = data['data'] is Map<String, dynamic>
+            ? data['data'] as Map<String, dynamic>
+            : <String, dynamic>{};
+        onDataChanged?.call(action, payload);
+      }
+    });
+
+    // 服务端队列状态推送
+    _socket!.on('queue_status', (data) {
+      if (data is Map) {
+        final rawJobs = data['jobs'] as List<dynamic>? ?? [];
+        final jobs = rawJobs
+            .whereType<Map<String, dynamic>>()
+            .map((j) => QueueJob.fromJson(j))
+            .toList();
+        GlobalQueueState.notifier.value = jobs;
+        onQueueStatus?.call(jobs);
       }
     });
 
     _socket!.connect();
   }
 
-  /// 发送消息到服务端
-  void sendMessage(String text) {
+  /// 上传文件到服务端 /api/upload，返回 AttachedFile
+  Future<AttachedFile?> uploadFile(File file) async {
+    try {
+      final uri = Uri.parse('$serverUrl/api/upload');
+      final request = http.MultipartRequest('POST', uri);
+      request.files.add(await http.MultipartFile.fromPath('file', file.path));
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 200) {
+        final body = json.decode(response.body) as Map<String, dynamic>;
+        final data = body['data'] as Map<String, dynamic>?;
+        if (data != null) {
+          return AttachedFile(
+            fileName: data['filename'] as String? ?? file.path.split('/').last,
+            fileUrl: data['url'] as String? ?? '',
+          );
+        }
+      }
+    } catch (_) {
+      // 上传失败静默处理，不影响消息发送
+    }
+    return null;
+  }
+
+  /// 发送消息到服务端，可附带文件引用
+  void sendMessage(String text, {List<AttachedFile> files = const []}) {
     if (_socket == null || !_socket!.connected) return;
 
     final messageId = const Uuid().v4();
@@ -120,7 +214,7 @@ class ChatService {
         'output': text,
         'threadId': _threadId,
       },
-      'fileReferences': [],
+      'fileReferences': files.map((f) => f.toJson()).toList(),
     };
 
     _socket!.emit('client_message', payload);
@@ -169,5 +263,30 @@ class ChatService {
     if (msgId.isEmpty || token.isEmpty) return;
 
     onStreamUpdate?.call(msgId, token);
+  }
+
+  /// 连接后同步所有本地保存的 LLM 提供商凭据到服务器
+  Future<void> _syncLlmConfig() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedJson = prefs.getString('llm_providers');
+      if (savedJson == null || savedJson.isEmpty) return;
+      final providers = json.decode(savedJson) as List<dynamic>;
+      for (final p in providers) {
+        if (p is Map) {
+          final key = p['api_key'] as String? ?? '';
+          final url = p['base_url'] as String? ?? '';
+          if (key.isNotEmpty && url.isNotEmpty) {
+            await http.put(
+              Uri.parse('$serverUrl/api/settings/llm'),
+              headers: {'Content-Type': 'application/json'},
+              body: json.encode({'api_key': key, 'base_url': url}),
+            );
+          }
+        }
+      }
+    } catch (_) {
+      // 非关键操作，静默失败
+    }
   }
 }

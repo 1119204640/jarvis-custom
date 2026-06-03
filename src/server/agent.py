@@ -1,9 +1,9 @@
 """
-Actual Budget Agent — LLM-powered financial assistant.
+Jarvis Agent — LLM-powered personal assistant.
 
-Uses LangGraph ReAct agent + DeepSeek to control Actual Budget via natural
-language.  Every tool is discovered dynamically from the MCP server — no
-per-tool hardcoding.
+Uses LangGraph ReAct agent + DeepSeek for natural language interaction.
+The LLM instance is provided externally via the ModelGateway so that task-type
+routing (model + thinking settings) is centralized.
 """
 
 from __future__ import annotations
@@ -15,22 +15,15 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage
 from loguru import logger
 
-from .actual_api import ActualBudgetClient
-from .constants import LLM_MODEL, LLM_KEY, LLM_URL, SYSTEM_PROMPT
+from .constants import SYSTEM_PROMPT
 
 
 class Agent:
-    """ReAct agent that controls Actual Budget via MCP tools."""
+    """ReAct agent for asset (vault), todo, calendar, and file management."""
 
-    def __init__(self):
-        self.client = ActualBudgetClient()
-        self.llm = ChatOpenAI(
-            model=LLM_MODEL,
-            base_url=LLM_URL,
-            api_key=LLM_KEY,
-            temperature=0,
-            extra_body={"thinking": {"type": "disabled"}},
-        )
+    def __init__(self, llm: ChatOpenAI, extra_tools: list | None = None):
+        self.extra_tools = extra_tools or []
+        self.llm = llm
         self.agent = None  # built lazily in connect()
 
     # ------------------------------------------------------------------
@@ -38,11 +31,8 @@ class Agent:
     # ------------------------------------------------------------------
 
     async def connect(self) -> None:
-        """Connect to MCP and build the agent graph with discovered tools."""
-        logger.info("Connecting to Actual Budget MCP server...")
-        await self.client.connect()
-
-        tools = await self.client.to_langchain_tools()
+        """Build the agent graph with provided tools."""
+        tools = self.extra_tools
         logger.info(f"Building agent with {len(tools)} tools")
 
         now = datetime.now().astimezone()
@@ -60,30 +50,44 @@ class Agent:
         )
 
     async def disconnect(self) -> None:
-        await self.client.disconnect()
+        pass
 
     # ------------------------------------------------------------------
     # Chat
     # ------------------------------------------------------------------
 
-    async def achat(self, message: str, history: list | None = None) -> str:
-        """Non-streaming chat. Returns the agent's reply as a string."""
+    async def achat(self, message: str) -> dict:
+        """Non-streaming chat. Returns {"content": str, "reasoning_content": str|None}."""
         self._ensure_ready()
-        messages: list = (history or []) + [HumanMessage(content=message)]
-        result = await self.agent.ainvoke({"messages": messages})
-        return result["messages"][-1].content
+        result = await self.agent.ainvoke({"messages": [HumanMessage(content=message)]})
+        final_msg = result["messages"][-1]
+        reasoning = None
+        if hasattr(final_msg, "additional_kwargs"):
+            reasoning = final_msg.additional_kwargs.get("reasoning_content")
+        return {"content": final_msg.content, "reasoning_content": reasoning}
 
-    async def astream(self, message: str, history: list | None = None):
-        """Stream the agent's reply, yielding text chunks."""
+    async def astream(self, message: str):
+        """Stream the agent's reply, yielding text chunks and status dicts.
+
+        Yields:
+            str — text token from the LLM
+            dict — progress event: {"type": "tool_start"|"tool_end", "message": str}
+        """
         self._ensure_ready()
-        messages: list = (history or []) + [HumanMessage(content=message)]
         async for event in self.agent.astream_events(
-            {"messages": messages}, version="v2"
+            {"messages": [HumanMessage(content=message)]}, version="v2"
         ):
-            if event.get("event") == "on_chat_model_stream":
+            kind = event.get("event")
+            if kind == "on_chat_model_stream":
                 content = event["data"]["chunk"].content
                 if content:
                     yield content
+            elif kind == "on_tool_start":
+                tool_name = event.get("name", "unknown")
+                yield {"type": "tool_start", "message": f"调用工具: {tool_name}"}
+            elif kind == "on_tool_end":
+                tool_name = event.get("name", "unknown")
+                yield {"type": "tool_end", "message": f"工具完成: {tool_name}"}
 
     def _ensure_ready(self) -> None:
         if self.agent is None:

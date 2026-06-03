@@ -4,9 +4,3 @@
 [submodule "modules/loguru"]
 	path = modules/loguru
 	url = https://github.com/Delgan/loguru.git
-[submodule "modules/actual-server"]
-	path = modules/actual-server
-	url = https://github.com/actualbudget/actual-server.git
-[submodule "modules/actual-mcp"]
-	path = modules/actual-mcp
-	url = https://github.com/s-stefanov/actual-mcp.git

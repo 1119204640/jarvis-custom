@@ -30,7 +30,7 @@ async def ainput(prompt: str = "") -> str:
 
 async def repl() -> None:
     print("╔══════════════════════════════════════════╗")
-    print("║   Jarvis — Actual Budget AI Assistant    ║")
+    print("║   Jarvis — Personal AI Assistant          ║")
     print("╠══════════════════════════════════════════╣")
     print("║  命令：                                   ║")
     print("║    /help   — 显示帮助信息                  ║")

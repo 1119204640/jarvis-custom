@@ -47,6 +47,18 @@ dependencies:
   # Markdown rendering for AI responses
   flutter_markdown: ^0.7.6
 
+  # Image picker for memo/reminder attachments
+  image_picker: ^1.1.2
+
+  # File picker for memo attachments
+  file_picker: ^8.0.0
+
+  # Chinese lunar calendar
+  lunar: ^1.7.8
+
+  # Local storage for settings (API key, URL, etc.)
+  shared_preferences: ^2.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -63,6 +75,9 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

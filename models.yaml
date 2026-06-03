@@ -1,0 +1,180 @@
+# ============================================================================
+# 模型配置表 — 在这里添加/修改模型及其能力定义
+# ============================================================================
+#
+# 每个模型包含以下字段：
+#   name:             显示名称（UI 中展示）
+#   desc:             模型描述（一句话说明特点）
+#   api_base:         API 端点地址（OpenAI 兼容格式）
+#   provider:         提供方名称（OpenAI / DeepSeek / Google / 自定义）
+#   supports_vision:  true/false — 是否支持多模态视觉识别（图片/PDF）
+#   supports_thinking:  true/false — 是否支持深度推理（thinking/reasoning）
+#   thinking_format:   "deepseek" — thinking 走 extra_body 协议（DeepSeek 特有）；
+#                      省略或填其他值 — 标准协议（大多数模型不需要填）
+#   formats:           支持的文件格式（true=支持, false=不支持）
+#
+# API Key 配置：
+#   通过设置页面「模型连接配置」填入 Key 并点击"测试并添加"
+#   Key 会保存在 data/credentials.yaml 中（已加入 .gitignore）
+#   也可手动创建 data/credentials.yaml，服务启动时自动加载：
+#
+#     api.deepseek.com:
+#       api_key: sk-your-deepseek-key
+#       base_url: https://api.deepseek.com/v1
+#     api.openai.com:
+#       api_key: sk-your-openai-key
+#       base_url: https://api.openai.com/v1
+#
+# 修改后重启服务器即可生效，无需改任何代码。
+# ============================================================================
+
+models:
+  # --------------------------------------------------------------------------
+  # OpenAI 模型
+  # --------------------------------------------------------------------------
+  gpt-4o:
+    name: "GPT-4o"
+    desc: "OpenAI 旗舰多模态模型，支持文本、图片、PDF 视觉识别，响应快速且精准。"
+    api_base: "https://api.openai.com/v1"
+    provider: "OpenAI"
+    supports_vision: true
+    supports_thinking: false
+    formats:
+      md: true
+      txt: true
+      csv: true
+      json: true
+      ics: true
+      docx: true
+      xlsx: true
+      pdf: true
+      png: true
+      jpg: true
+      jpeg: true
+      gif: true
+      webp: true
+      bmp: true
+
+  gpt-4o-mini:
+    name: "GPT-4o Mini"
+    desc: "OpenAI 轻量多模态模型，成本低、速度快，适合日常对话和简单任务。"
+    api_base: "https://api.openai.com/v1"
+    provider: "OpenAI"
+    supports_vision: true
+    supports_thinking: false
+    formats:
+      md: true
+      txt: true
+      csv: true
+      json: true
+      ics: true
+      docx: true
+      xlsx: true
+      pdf: true
+      png: true
+      jpg: true
+      jpeg: true
+      gif: true
+      webp: true
+      bmp: true
+
+  # --------------------------------------------------------------------------
+  # DeepSeek 模型
+  # --------------------------------------------------------------------------
+  deepseek-v4-flash:
+    name: "DeepSeek V4 Flash"
+    desc: "快速文本模型，适合日常对话和纯文本摘要。不支持图片/PDF视觉识别（无多模态能力）。"
+    api_base: "https://api.deepseek.com/v1"
+    provider: "DeepSeek"
+    supports_vision: false
+    supports_thinking: false
+    thinking_format: "deepseek"
+    formats:
+      md: true
+      txt: true
+      csv: true
+      json: true
+      ics: true
+      docx: true
+      xlsx: true
+      pdf: false
+      png: false
+      jpg: false
+      jpeg: false
+      gif: false
+      webp: false
+      bmp: false
+
+  deepseek-v4-pro:
+    name: "DeepSeek V4 Pro"
+    desc: "旗舰模型，支持深度推理，适合复杂任务和工具调用。不支持图片/PDF视觉识别（无多模态能力）。"
+    api_base: "https://api.deepseek.com/v1"
+    provider: "DeepSeek"
+    supports_vision: false
+    supports_thinking: true
+    thinking_format: "deepseek"
+    formats:
+      md: true
+      txt: true
+      csv: true
+      json: true
+      ics: true
+      docx: true
+      xlsx: true
+      pdf: false
+      png: false
+      jpg: false
+      jpeg: false
+      gif: false
+      webp: false
+      bmp: false
+
+  gemini-2.5-flash:
+    name: "Gemini 2.5 Flash"
+    desc: "Google 旗舰轻量多模态模型，拥有百万级（1M+）超大上下文窗口，完美承载长文档图文混合投喂，免费额度极其慷慨。"
+    api_base: "https://generativelanguage.googleapis.com/v1beta/openai/"
+    provider: "Google"
+    supports_vision: true
+    supports_thinking: true
+    formats:
+      md: true
+      txt: true
+      csv: true
+      json: true
+      ics: true
+      docx: true
+      xlsx: true
+      pdf: true
+      png: true
+      jpg: true
+      jpeg: true
+      gif: true
+      webp: true
+      bmp: true
+
+# ============================================================================
+# 默认任务模型分配 — 每个任务类型使用哪个模型
+# ============================================================================
+#
+# 任务类型说明：
+#   TEXT:        纯文本文件分类摘要、Agent 对话
+#   MULTIMODAL:  图片/PDF/Office 视觉理解、复杂推理（备忘录/提醒/日程管理）
+#
+# 参数说明：
+#   thinking_enabled: 是否开启深度推理（仅 supports_thinking=true 的模型有效）
+#   thinking_effort:  推理强度 high / max（仅 DeepSeek 模型生效）
+#   temperature:      生成温度 0.0-1.5（开启 thinking 时不生效）
+# ============================================================================
+
+profiles:
+  TEXT:
+    model: "deepseek-v4-flash"
+    thinking_enabled: false
+    thinking_effort: "high"
+    temperature: 0.0
+
+  MULTIMODAL:
+    model: "gemini-2.5-flash"
+    thinking_enabled: false
+    thinking_effort: "high"
+    temperature: 0.0

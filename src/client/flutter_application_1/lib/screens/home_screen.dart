@@ -1,12 +1,13 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:uuid/uuid.dart';
 import '../models/chat_message.dart';
 import '../services/chat_service.dart';
 import '../widgets/sidebar.dart';
-import '../widgets/chat_bubble.dart';
-import '../widgets/ai_message.dart';
-import '../widgets/message_input.dart';
+import '../widgets/toast_notification.dart';
+import 'calendar/calendar_screen.dart';
+import 'vault_detail_screen.dart';
+import 'vault_screen.dart';
+import 'todo_screen.dart';
+import 'settings_screen.dart';
 
 /// 应用主页面
 ///
@@ -26,49 +27,48 @@ class _HomeScreenState extends State<HomeScreen> {
   late final ChatService _chatService;
   final List<ChatMessage> _messages = [];
   int _selectedFeature = 0;
-  bool _isConnected = false;
-  bool _isStreaming = false;
-
-  // 流式合并：服务端发来的增量 token 拼到一起
-  String _streamingContent = '';
-  String _streamingMessageId = '';
+  int _vaultRefreshKey = 0;
+  int _todoRefreshKey = 0;
+  int _calendarRefreshKey = 0;
+  bool _todoShowAddForm = false;
 
   final ScrollController _scrollController = ScrollController();
+
+  final GlobalKey<ToastNotificationState> _toastKey =
+      GlobalKey<ToastNotificationState>();
 
   @override
   void initState() {
     super.initState();
     _chatService = ChatService();
 
-    // 注册回调
-    _chatService.onConnectionChange = (connected) {
-      if (mounted) {
-        setState(() => _isConnected = connected);
-      }
+    _chatService.onConnectionChange = (connected) {};
+
+    _chatService.onDataChanged = (action, data) {
+      if (!mounted) return;
+      setState(() {
+        switch (action) {
+          case 'file_processed':
+          case 'document_processed':
+            _vaultRefreshKey++;
+            break;
+          case 'todo_updated':
+          case 'todo_created':
+            _todoRefreshKey++;
+            break;
+          case 'calendar_updated':
+            _calendarRefreshKey++;
+            break;
+        }
+      });
     };
 
     _chatService.onMessage = (message) {
       if (mounted) {
         setState(() {
-          // 如果流式消息完成了，替换为完整消息
-          if (_streamingMessageId.isNotEmpty) {
-            // 找到流式消息并替换或追加
-            final idx = _messages.indexWhere((m) => m.id == _streamingMessageId);
-            if (idx >= 0) {
-              _messages[idx] = _messages[idx].copyWith(
-                content: message.content,
-                isStreaming: false,
-              );
-            }
-            // 如果流式内容比完整消息长（不太可能），保留完整消息
-            _streamingContent = '';
-            _streamingMessageId = '';
-          }
-          // 避免重复添加
           if (!_messages.any((m) => m.id == message.id)) {
             _messages.add(message);
           }
-          _isStreaming = false;
         });
         _scrollToBottom();
       }
@@ -77,23 +77,21 @@ class _HomeScreenState extends State<HomeScreen> {
     _chatService.onStreamUpdate = (messageId, token) {
       if (!mounted) return;
       setState(() {
-        // 特殊标记：流式结束
         if (messageId.endsWith('_done')) {
           final realId = messageId.replaceAll('_done', '');
           final idx = _messages.indexWhere((m) => m.id == realId);
           if (idx >= 0) {
             _messages[idx] = _messages[idx].copyWith(isStreaming: false);
           }
-          _isStreaming = false;
           return;
         }
 
-        _isStreaming = true;
-
-        if (messageId != _streamingMessageId) {
-          // 新的流式消息开始
-          _streamingMessageId = messageId;
-          _streamingContent = token;
+        final idx = _messages.indexWhere((m) => m.id == messageId);
+        if (idx >= 0) {
+          _messages[idx] = _messages[idx].copyWith(
+            content: _messages[idx].content + token,
+          );
+        } else {
           _messages.add(ChatMessage(
             id: messageId,
             role: 'assistant',
@@ -101,42 +99,33 @@ class _HomeScreenState extends State<HomeScreen> {
             createdAt: DateTime.now(),
             isStreaming: true,
           ));
-        } else {
-          // 追加到已有流式消息
-          _streamingContent += token;
-          final idx = _messages.indexWhere((m) => m.id == messageId);
-          if (idx >= 0) {
-            _messages[idx] = _messages[idx].copyWith(content: _streamingContent);
-          }
         }
       });
       _scrollToBottom();
     };
 
-    // 启动连接
+    _chatService.onProgress = (stage, message) {
+      if (!mounted) return;
+      // doc_done 时刷新文档库
+      if (stage == 'doc_done') {
+        setState(() => _vaultRefreshKey++);
+      }
+    };
+
+    _chatService.onLog = (level, message) {
+      if (!mounted) return;
+      _toastKey.currentState?.addToast(ToastItem(
+        id: DateTime.now().microsecondsSinceEpoch.toString(),
+        level: level,
+        message: message,
+      ));
+    };
+
     _connect();
   }
 
   Future<void> _connect() async {
     await _chatService.connect();
-  }
-
-  void _sendMessage(String text) {
-    if (!_isConnected) return;
-
-    // 将用户消息立即加入列表，显示为气泡
-    final userMessage = ChatMessage(
-      id: const Uuid().v4(),
-      role: 'user',
-      content: text,
-      createdAt: DateTime.now(),
-    );
-    setState(() {
-      _messages.add(userMessage);
-    });
-    _scrollToBottom();
-
-    _chatService.sendMessage(text);
   }
 
   void _scrollToBottom() {
@@ -159,99 +148,109 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  void _onFeatureSelected(int index) {
+    setState(() => _selectedFeature = index);
+    Navigator.pop(context); // 关闭抽屉
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(AppSidebar.items[_selectedFeature].title),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        actions: [
-          // 连接状态指示
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.circle,
-                  size: 10,
-                  color: _isConnected ? Colors.green : Colors.red,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _isConnected ? '已连接' : '未连接',
-                  style: Theme.of(context).textTheme.labelSmall,
-                ),
-              ],
-            ),
-          ),
-          // 停止生成按钮
-          if (_isStreaming)
-            IconButton(
-              icon: const Icon(Icons.stop),
-              tooltip: '停止生成',
-              onPressed: () {
-                _chatService.stopGeneration();
-                setState(() => _isStreaming = false);
-              },
-            ),
-        ],
-      ),
-      drawer: AppSidebar(
-        selectedIndex: _selectedFeature,
-        onItemSelected: (index) {
-          setState(() => _selectedFeature = index);
-          Navigator.pop(context); // 关闭抽屉
-        },
-      ),
-      body: Column(
-        children: [
-          // 聊天消息列表
-          Expanded(
-            child: _messages.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.chat_bubble_outline,
-                          size: 64,
-                          color: Theme.of(context).colorScheme.outline,
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          AppSidebar.items[_selectedFeature].enabled
-                              ? '向 Jarvis 发送消息开始对话'
-                              : '该功能尚未接入服务端',
-                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    controller: _scrollController,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    itemCount: _messages.length,
-                    itemBuilder: (context, index) {
-                      final message = _messages[index];
-                      if (message.role == 'user') {
-                        return ChatBubble(message: message);
-                      } else {
-                        return AiMessage(message: message);
-                      }
-                    },
-                  ),
-          ),
+    final sidebar = AppSidebar(
+      selectedIndex: _selectedFeature,
+      onItemSelected: _onFeatureSelected,
+    );
 
-          // 底部输入区
-          MessageInput(
-            enabled: _isConnected && !_isStreaming,
-            onSend: _sendMessage,
-          ),
-        ],
-      ),
+    Widget content;
+
+    // 文档库
+    if (_selectedFeature == 0) {
+      content = Scaffold(
+        appBar: AppBar(
+          title: const Text('文档库'),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        ),
+        drawer: sidebar,
+        body: VaultScreen(key: ValueKey('vault_$_vaultRefreshKey')),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () async {
+            final result = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(builder: (_) => const VaultDetailScreen()),
+            );
+            if (result == true && mounted) {
+              setState(() => _vaultRefreshKey++);
+            }
+          },
+          icon: const Icon(Icons.edit),
+          label: const Text('新建文档'),
+        ),
+      );
+    } else if (_selectedFeature == 2) {
+      // 日程
+      content = CalendarScreen(
+        key: ValueKey('calendar_$_calendarRefreshKey'),
+        drawer: sidebar,
+      );
+    } else if (_selectedFeature == 1) {
+      // 待办事项
+      content = Scaffold(
+        appBar: AppBar(
+          title: const Text('待办事项'),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        ),
+        drawer: sidebar,
+        body: TodoScreen(
+          key: ValueKey('todo_$_todoRefreshKey'),
+          showAddForm: _todoShowAddForm,
+          onToggleAddForm: () {
+            setState(() => _todoShowAddForm = !_todoShowAddForm);
+          },
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            setState(() => _todoShowAddForm = !_todoShowAddForm);
+          },
+          child: Icon(_todoShowAddForm ? Icons.close : Icons.add),
+        ),
+      );
+    } else if (_selectedFeature == 4) {
+      // 设置
+      content = Scaffold(
+        drawer: sidebar,
+        body: SettingsScreen(
+          onBack: () => setState(() => _selectedFeature = 0),
+        ),
+      );
+    } else {
+      // 默认：文档库
+      content = Scaffold(
+        appBar: AppBar(
+          title: const Text('文档库'),
+          backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        ),
+        drawer: sidebar,
+        body: VaultScreen(key: ValueKey('vault_$_vaultRefreshKey')),
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: () async {
+            final result = await Navigator.push<bool>(
+              context,
+              MaterialPageRoute(builder: (_) => const VaultDetailScreen()),
+            );
+            if (result == true && mounted) {
+              setState(() => _vaultRefreshKey++);
+            }
+          },
+          icon: const Icon(Icons.edit),
+          label: const Text('新建文档'),
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        content,
+        ToastNotification(key: _toastKey),
+      ],
     );
   }
 }

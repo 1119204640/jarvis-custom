@@ -1,6 +1,5 @@
-- 每次回答之前，不管用户问什么，都需要先详细看一遍项目代码
-- 该项目使用 uv 工具包来管理，可以使用 uv 命令
-- 自己写的代码在 /src 里面，用到的第三方库（从 GitHub 上面下载的）放在/modules 里面
-- 客户端代码在 /src/client，用的是 flutter；服务端代码在 /src/server
-- 遇到的所有难题和解决方法都要记录到根目录的 readme.md 中
-- 如果难题属于 flutter 客户端的，则记录进/jarvis-custom/src/client/flutter_application_1项目下的README.md中
+# CLAUDE.md
+
+本仓库的项目级协作约定已经迁移到 `AGENTS.md`。
+
+如果仍然使用 Claude Code，请直接遵循根目录的 `AGENTS.md`，避免 `CLAUDE.md` 和 `AGENTS.md` 双份配置发生漂移。

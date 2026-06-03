@@ -17,8 +17,7 @@ class SidebarItem {
 
 /// 应用侧边栏 — 功能导航
 ///
-/// 列出所有功能模块，目前只有"记账"已对接服务端，
-/// 其余模块显示为禁用状态并附带提示。
+/// 列出所有功能模块。
 class AppSidebar extends StatelessWidget {
   final int selectedIndex;
   final ValueChanged<int> onItemSelected;
@@ -29,13 +28,12 @@ class AppSidebar extends StatelessWidget {
     required this.onItemSelected,
   });
 
-  // 功能列表：只有记账服务端已实现
   static const List<SidebarItem> items = [
-    SidebarItem(title: '记账', icon: Icons.account_balance_wallet, enabled: true, tooltip: 'Actual Budget 记账助手'),
-    SidebarItem(title: '备忘录', icon: Icons.note_alt_outlined, enabled: false, tooltip: '备忘录功能尚未接入服务端'),
-    SidebarItem(title: '提醒事项', icon: Icons.alarm, enabled: false, tooltip: '提醒事项功能尚未接入服务端'),
-    SidebarItem(title: '日程', icon: Icons.calendar_today, enabled: false, tooltip: '日程功能尚未接入服务端'),
+    SidebarItem(title: '文档库', icon: Icons.archive_outlined, enabled: true, tooltip: '创建和管理文档资产'),
+    SidebarItem(title: '待办事项', icon: Icons.check_circle_outline, enabled: true, tooltip: '创建和管理待办事项'),
+    SidebarItem(title: '日程', icon: Icons.calendar_today, enabled: true, tooltip: '管理日程和日历视图'),
     SidebarItem(title: '邮件', icon: Icons.email_outlined, enabled: false, tooltip: '邮件功能尚未接入服务端'),
+    SidebarItem(title: '设置', icon: Icons.settings, enabled: true, tooltip: '配置文件管理目录等'),
   ];
 
   @override

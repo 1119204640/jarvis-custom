@@ -53,7 +53,7 @@ cp .env.example .env
 ### 5. 验证后端
 
 ```bash
-uv run python scripts/run_jarvis_smoke.py
+uv run python .claude/skills/run-jarvis/run_jarvis_smoke.py
 ```
 
 这是主 smoke test，会启动服务端并验证健康检查、备忘录、提醒事项和上传接口。
@@ -78,7 +78,7 @@ uv run python scripts/run_jarvis_smoke.py
 
 ### 44. smoke test 仍在调用旧的 memos/reminders 接口
 
-**现象**：`uv run python scripts/run_jarvis_smoke.py` 能把服务启动起来，但在 CRUD 阶段会因为 `POST /api/memos` 返回 404 而失败。
+**现象**：`uv run python .claude/skills/run-jarvis/run_jarvis_smoke.py` 能把服务启动起来，但在 CRUD 阶段会因为 `POST /api/memos` 返回 404 而失败。
 
 **原因**：服务端 REST API 已经统一重命名为 `assets` / `todos`，而 smoke 脚本还停留在旧的 `memos` / `reminders` 路由。
 

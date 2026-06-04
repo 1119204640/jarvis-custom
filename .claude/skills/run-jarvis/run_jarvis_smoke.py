@@ -19,7 +19,7 @@ import zlib
 from pathlib import Path
 
 BASE = "http://localhost:8000"
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def _req(method: str, path: str, body: dict | None = None) -> tuple[int, dict]:

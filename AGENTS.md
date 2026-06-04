@@ -22,5 +22,5 @@ This file provides guidance to Codex and other AI coding agents working in this 
 
 ## Validation
 
-- Use `uv run python scripts/run_jarvis_smoke.py` for the main server smoke test when validating backend behavior.
+- Use `uv run python .claude/skills/run-jarvis/run_jarvis_smoke.py` for the main server smoke test when validating backend behavior.
 - Human-run entry points remain `./start-server.sh` and `./start-client.sh`.
